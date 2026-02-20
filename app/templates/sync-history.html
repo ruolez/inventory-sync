@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sync History - Inventory Sync</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <a href="/" class="navbar-brand">Inventory Sync</a>
+        <ul class="navbar-nav">
+            <li><a href="/">Dashboard</a></li>
+            <li><a href="/stores">Stores</a></li>
+            <li><a href="/sql-config">SQL Config</a></li>
+            <li><a href="/sync-history" class="active">Sync History</a></li>
+            <li><a href="/logs">Logs</a></li>
+        </ul>
+    </nav>
+
+    <div class="container">
+        <div class="page-header">
+            <h1>Sync History</h1>
+            <p>View all sync run history across stores</p>
+        </div>
+
+        <div id="alert" class="alert"></div>
+
+        <div class="card">
+            <div class="filter-bar">
+                <select class="form-control" id="filter-store" onchange="loadHistory()">
+                    <option value="">All Stores</option>
+                </select>
+                <select class="form-control" id="filter-status" onchange="loadHistory()">
+                    <option value="">All Statuses</option>
+                    <option value="success">Success</option>
+                    <option value="partial">Partial</option>
+                    <option value="failed">Failed</option>
+                    <option value="running">Running</option>
+                </select>
+                <button class="btn btn-outline" onclick="loadHistory()">Refresh</button>
+            </div>
+
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Store</th>
+                            <th>Started</th>
+                            <th>Status</th>
+                            <th>Total</th>
+                            <th>Updated</th>
+                            <th>Published</th>
+                            <th>Unpublished</th>
+                            <th>Skipped</th>
+                            <th>Errors</th>
+                            <th>Duration</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="history-body">
+                        <tr><td colspan="12" class="loading-text">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div style="margin-top: 16px; display: flex; gap: 8px; justify-content: center;">
+                <button class="btn btn-outline btn-sm" id="prev-btn" onclick="prevPage()" disabled>Previous</button>
+                <span id="page-info" style="padding: 6px 12px; font-size: 13px; color: var(--text-secondary);"></span>
+                <button class="btn btn-outline btn-sm" id="next-btn" onclick="nextPage()">Next</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/sync-history.js"></script>
+</body>
+</html>

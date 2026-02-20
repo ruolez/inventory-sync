@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Product Logs - Inventory Sync</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <a href="/" class="navbar-brand">Inventory Sync</a>
+        <ul class="navbar-nav">
+            <li><a href="/">Dashboard</a></li>
+            <li><a href="/stores">Stores</a></li>
+            <li><a href="/sql-config">SQL Config</a></li>
+            <li><a href="/sync-history">Sync History</a></li>
+            <li><a href="/logs" class="active">Logs</a></li>
+        </ul>
+    </nav>
+
+    <div class="container">
+        <div class="page-header">
+            <h1>Product Logs</h1>
+            <p>Detailed log of every product change during sync runs</p>
+        </div>
+
+        <div class="card">
+            <div class="filter-bar">
+                <select class="form-control" id="filter-store" onchange="loadLogs()">
+                    <option value="">All Stores</option>
+                </select>
+                <select class="form-control" id="filter-action" onchange="loadLogs()">
+                    <option value="">All Actions</option>
+                    <option value="inventory_update">Inventory Update</option>
+                    <option value="unpublish">Unpublish</option>
+                    <option value="republish">Republish</option>
+                    <option value="skip">Skip</option>
+                    <option value="error">Error</option>
+                </select>
+                <input type="text" class="form-control" id="filter-upc" placeholder="Search by UPC..." onkeyup="debounceSearch()">
+                <button class="btn btn-outline" onclick="loadLogs()">Refresh</button>
+            </div>
+
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Store</th>
+                            <th>UPC</th>
+                            <th>Product</th>
+                            <th>On Hand</th>
+                            <th>Pending PO</th>
+                            <th>In Progress</th>
+                            <th>Old Qty</th>
+                            <th>New Qty</th>
+                            <th>Action</th>
+                            <th>Error</th>
+                        </tr>
+                    </thead>
+                    <tbody id="logs-body">
+                        <tr><td colspan="11" class="loading-text">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div style="margin-top: 16px; display: flex; gap: 8px; justify-content: center;">
+                <button class="btn btn-outline btn-sm" id="prev-btn" onclick="prevPage()" disabled>Previous</button>
+                <span id="page-info" style="padding: 6px 12px; font-size: 13px; color: var(--text-secondary);"></span>
+                <button class="btn btn-outline btn-sm" id="next-btn" onclick="nextPage()">Next</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/logs.js"></script>
+</body>
+</html>

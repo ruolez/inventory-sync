@@ -1,0 +1,42 @@
+services:
+  web:
+    build: .
+    ports:
+      - "5557:5000"
+    volumes:
+      - ./app:/app/app
+    environment:
+      - FLASK_ENV=development
+      - DATABASE_URL=postgresql://inventory:inventory@db:5432/inventory_sync
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=inventory
+      - POSTGRES_PASSWORD=inventory
+      - POSTGRES_DB=inventory_sync
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U inventory -d inventory_sync"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  pgdata:

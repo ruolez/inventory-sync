@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SQL Config - Inventory Sync</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <a href="/" class="navbar-brand">Inventory Sync</a>
+        <ul class="navbar-nav">
+            <li><a href="/">Dashboard</a></li>
+            <li><a href="/stores">Stores</a></li>
+            <li><a href="/sql-config" class="active">SQL Config</a></li>
+            <li><a href="/sync-history">Sync History</a></li>
+            <li><a href="/logs">Logs</a></li>
+        </ul>
+    </nav>
+
+    <div class="container">
+        <div class="page-header">
+            <h1>SQL Server Configuration</h1>
+            <p>Configure connections to S2S and DB_ADMIN databases</p>
+        </div>
+
+        <div id="alert" class="alert"></div>
+
+        <!-- S2S Config -->
+        <div class="card">
+            <div class="config-section">
+                <h3>S2S Database (Inventory + Purchase Orders)</h3>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="s2s-host">Host</label>
+                        <input type="text" class="form-control" id="s2s-host" placeholder="192.168.1.100">
+                    </div>
+                    <div class="form-group">
+                        <label for="s2s-port">Port</label>
+                        <input type="number" class="form-control" id="s2s-port" value="1433">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="s2s-database">Database Name</label>
+                    <input type="text" class="form-control" id="s2s-database" placeholder="S2S">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="s2s-username">Username</label>
+                        <input type="text" class="form-control" id="s2s-username">
+                    </div>
+                    <div class="form-group">
+                        <label for="s2s-password">Password</label>
+                        <input type="password" class="form-control" id="s2s-password">
+                    </div>
+                </div>
+                <div class="btn-group">
+                    <button class="btn btn-primary" onclick="saveConfig('s2s')">Save S2S Config</button>
+                    <button class="btn btn-outline" onclick="testConnection('s2s')">Test Connection</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- DB_ADMIN Config -->
+        <div class="card">
+            <div class="config-section">
+                <h3>DB_ADMIN Database (In-Progress Quotations)</h3>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="admin-host">Host</label>
+                        <input type="text" class="form-control" id="admin-host" placeholder="192.168.1.100">
+                    </div>
+                    <div class="form-group">
+                        <label for="admin-port">Port</label>
+                        <input type="number" class="form-control" id="admin-port" value="1433">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="admin-database">Database Name</label>
+                    <input type="text" class="form-control" id="admin-database" placeholder="DB_ADMIN">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="admin-username">Username</label>
+                        <input type="text" class="form-control" id="admin-username">
+                    </div>
+                    <div class="form-group">
+                        <label for="admin-password">Password</label>
+                        <input type="password" class="form-control" id="admin-password">
+                    </div>
+                </div>
+                <div class="btn-group">
+                    <button class="btn btn-primary" onclick="saveConfig('db_admin')">Save DB_ADMIN Config</button>
+                    <button class="btn btn-outline" onclick="testConnection('db_admin')">Test Connection</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/sql-config.js"></script>
+</body>
+</html>

@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stores - Inventory Sync</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <a href="/" class="navbar-brand">Inventory Sync</a>
+        <ul class="navbar-nav">
+            <li><a href="/">Dashboard</a></li>
+            <li><a href="/stores" class="active">Stores</a></li>
+            <li><a href="/sql-config">SQL Config</a></li>
+            <li><a href="/sync-history">Sync History</a></li>
+            <li><a href="/logs">Logs</a></li>
+        </ul>
+    </nav>
+
+    <div class="container">
+        <div class="page-header">
+            <h1>Shopify Stores</h1>
+            <p>Manage connected Shopify stores and their sync settings</p>
+        </div>
+
+        <div id="alert" class="alert"></div>
+
+        <div class="card">
+            <div class="card-header">
+                <h2>Stores</h2>
+                <button class="btn btn-primary" onclick="openAddModal()">+ Add Store</button>
+            </div>
+            <div id="stores-list">
+                <div class="loading-text">Loading stores...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add/Edit Store Modal -->
+    <div class="modal-overlay" id="store-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 id="modal-title">Add Store</h3>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="store-id">
+                <div class="form-group">
+                    <label for="store-name">Store Name</label>
+                    <input type="text" class="form-control" id="store-name" placeholder="My Shopify Store">
+                </div>
+                <div class="form-group">
+                    <label for="store-url">Store URL</label>
+                    <input type="text" class="form-control" id="store-url" placeholder="mystore.myshopify.com">
+                </div>
+                <div class="form-group">
+                    <label for="admin-token">Admin Access Token</label>
+                    <input type="password" class="form-control" id="admin-token" placeholder="shpat_xxxxxxxx">
+                </div>
+                <div class="form-group">
+                    <label for="sync-interval">Sync Interval (hours)</label>
+                    <input type="number" class="form-control" id="sync-interval" value="6" min="1" max="168">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
+                <button class="btn btn-primary" id="save-btn" onclick="saveStore()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Locations Modal -->
+    <div class="modal-overlay" id="locations-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Select Location</h3>
+                <button class="modal-close" onclick="closeLocationsModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="locations-list">
+                <div class="loading-text">Loading locations...</div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeLocationsModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="saveLocations()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/stores.js"></script>
+</body>
+</html>

@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Inventory Sync</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <a href="/" class="navbar-brand">Inventory Sync</a>
+        <ul class="navbar-nav">
+            <li><a href="/" class="active">Dashboard</a></li>
+            <li><a href="/stores">Stores</a></li>
+            <li><a href="/sql-config">SQL Config</a></li>
+            <li><a href="/sync-history">Sync History</a></li>
+            <li><a href="/logs">Logs</a></li>
+        </ul>
+    </nav>
+
+    <div class="container">
+        <div class="page-header">
+            <h1>Dashboard</h1>
+            <p>Overview of inventory sync activity</p>
+        </div>
+
+        <div class="stat-cards" id="stats-container">
+            <div class="stat-card">
+                <div class="stat-value" id="stat-stores">-</div>
+                <div class="stat-label">Total Stores</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="stat-running">-</div>
+                <div class="stat-label">Running Syncs</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="stat-syncs24">-</div>
+                <div class="stat-label">Syncs (24h)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="stat-changes24">-</div>
+                <div class="stat-label">Changes (24h)</div>
+            </div>
+        </div>
+
+        <div id="alert" class="alert"></div>
+
+        <div class="card">
+            <div class="card-header">
+                <h2>Stores</h2>
+            </div>
+            <div class="card-grid" id="stores-grid">
+                <div class="loading-text">Loading stores...</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h2>Recent Sync Runs</h2>
+            </div>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Store</th>
+                            <th>Started</th>
+                            <th>Status</th>
+                            <th>Updated</th>
+                            <th>Published</th>
+                            <th>Unpublished</th>
+                            <th>Errors</th>
+                            <th>Duration</th>
+                        </tr>
+                    </thead>
+                    <tbody id="recent-runs">
+                        <tr><td colspan="8" class="loading-text">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/dashboard.js"></script>
+</body>
+</html>
