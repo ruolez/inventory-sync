@@ -114,6 +114,15 @@ body {
     overflow: hidden;
 }
 
+html.sidebar-collapsed .sidebar { width: var(--sidebar-collapsed); }
+html.sidebar-collapsed .sidebar-brand { opacity: 0; width: 0; }
+html.sidebar-collapsed .nav-item span { opacity: 0; width: 0; }
+html.sidebar-collapsed .nav-item { justify-content: center; padding: 10px; }
+html.sidebar-collapsed .nav-item.active::before { top: 10px; bottom: 10px; }
+html.sidebar-collapsed .nav-section-label { font-size: 0; padding: 8px 0; margin: 4px 8px 0; }
+html.sidebar-collapsed .sidebar-btn span { opacity: 0; width: 0; }
+html.sidebar-collapsed .sidebar-btn { justify-content: center; padding: 10px; }
+html.sidebar-collapsed .collapse-icon { transform: rotate(180deg); }
 .sidebar.collapsed { width: var(--sidebar-collapsed); }
 
 .sidebar-header {
@@ -298,6 +307,7 @@ body {
     transition: margin-left 0.2s ease;
 }
 
+html.sidebar-collapsed .main-content { margin-left: var(--sidebar-collapsed); }
 .sidebar.collapsed ~ .main-content { margin-left: var(--sidebar-collapsed); }
 
 .container {
