@@ -38,7 +38,7 @@ async function loadHistory() {
         renderHistory(runs);
         updatePagination(runs.length);
     } catch (err) {
-        showAlert('Failed to load history: ' + err.message, 'error');
+        showToast('Failed to load history: ' + err.message, 'error');
     }
 }
 
@@ -53,8 +53,8 @@ function renderHistory(runs) {
         <tr>
             <td class="mono">${run.id}</td>
             <td>${escapeHtml(run.store_name)}</td>
-            <td>${formatDate(run.started_at)}</td>
-            <td>${statusBadge(run.status)}</td>
+            <td style="font-size: 12px;">${formatDate(run.started_at)}</td>
+            <td>${run.status === 'running' ? '<span class="badge badge-info"><span class="pulse-dot"></span>running</span>' : statusBadge(run.status)}</td>
             <td>${run.total_products}</td>
             <td>${run.products_updated}</td>
             <td>${run.products_published}</td>
@@ -63,25 +63,28 @@ function renderHistory(runs) {
             <td>${run.errors_count > 0 ? `<span style="color: var(--error);">${run.errors_count}</span>` : '0'}</td>
             <td>${run.duration_seconds ? run.duration_seconds.toFixed(1) + 's' : '-'}</td>
             <td>
-                <button class="btn btn-danger btn-sm" onclick="deleteRun(${run.id})">Delete</button>
+                <button class="btn btn-ghost btn-icon" onclick="deleteRun(${run.id})" title="Delete">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3,6 5,6 21,6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+                </button>
             </td>
         </tr>
     `).join('');
 }
 
 async function deleteRun(runId) {
-    if (!confirm('Delete this sync run and its logs?')) return;
+    const confirmed = await confirmDialog('Delete this sync run and its logs?', 'Delete Run');
+    if (!confirmed) return;
     try {
         const res = await fetch(`/api/history/${runId}`, { method: 'DELETE' });
         if (res.ok) {
-            showAlert('Sync run deleted', 'success');
+            showToast('Sync run deleted', 'success');
             loadHistory();
         } else {
             const data = await res.json();
-            showAlert(data.error || 'Failed to delete', 'error');
+            showToast(data.error || 'Failed to delete', 'error');
         }
     } catch (err) {
-        showAlert('Error: ' + err.message, 'error');
+        showToast('Error: ' + err.message, 'error');
     }
 }
 
@@ -101,35 +104,6 @@ function prevPage() {
 function nextPage() {
     currentPage++;
     loadHistory();
-}
-
-function statusBadge(status) {
-    const map = {
-        success: 'badge-success',
-        partial: 'badge-warning',
-        failed: 'badge-error',
-        running: 'badge-info',
-    };
-    return `<span class="badge ${map[status] || 'badge-neutral'}">${status}</span>`;
-}
-
-function formatDate(dateStr) {
-    if (!dateStr) return '-';
-    return new Date(dateStr).toLocaleString();
-}
-
-function escapeHtml(str) {
-    if (!str) return '';
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-}
-
-function showAlert(message, type) {
-    const alert = document.getElementById('alert');
-    alert.className = `alert alert-${type} show`;
-    alert.textContent = message;
-    setTimeout(() => alert.classList.remove('show'), 5000);
 }
 
 init();

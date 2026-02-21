@@ -13,16 +13,16 @@ async function loadDashboard() {
         schedulerStatuses = await statusRes.json();
         const runningSyncs = await runningRes.json();
 
-        document.getElementById('stat-stores').textContent = stats.total_stores;
-        document.getElementById('stat-running').textContent = stats.running_syncs;
-        document.getElementById('stat-syncs24').textContent = stats.syncs_24h;
-        document.getElementById('stat-changes24').textContent = stats.changes_24h;
+        animateValue(document.getElementById('stat-stores'), stats.total_stores);
+        animateValue(document.getElementById('stat-running'), stats.running_syncs);
+        animateValue(document.getElementById('stat-syncs24'), stats.syncs_24h);
+        animateValue(document.getElementById('stat-changes24'), stats.changes_24h);
 
         renderStoreCards(stores);
         renderRecentRuns(stats.recent_runs || []);
         updateCancelButtons(runningSyncs, stores);
     } catch (err) {
-        showAlert('Failed to load dashboard: ' + err.message, 'error');
+        showToast('Failed to load dashboard: ' + err.message, 'error');
     }
 }
 
@@ -36,11 +36,9 @@ function renderStoreCards(stores) {
     grid.innerHTML = stores.map(store => {
         const sched = schedulerStatuses[store.id] || {};
         const syncBadge = sched.running
-            ? '<span class="badge badge-success">Scheduler On</span>'
+            ? '<span class="badge badge-success"><span class="pulse-dot"></span>Scheduler On</span>'
             : '<span class="badge badge-neutral">Scheduler Off</span>';
-        const lastSync = store.last_sync_at
-            ? formatDate(store.last_sync_at)
-            : 'Never';
+        const lastSync = store.last_sync_at ? formatDate(store.last_sync_at) : 'Never';
         const pubBadge = store.publication_id
             ? '<span class="badge badge-info">Publication Set</span>'
             : '<span class="badge badge-warning">No Publication</span>';
@@ -49,19 +47,17 @@ function renderStoreCards(stores) {
             <div class="store-card">
                 <h3>${escapeHtml(store.store_name)}</h3>
                 <div class="store-url">${escapeHtml(store.store_url)}</div>
-                <div class="store-meta">
-                    ${syncBadge}
-                    ${pubBadge}
-                </div>
-                <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 12px;">
-                    Last sync: ${lastSync}
-                </div>
+                <div class="store-meta">${syncBadge}${pubBadge}</div>
+                <div class="store-detail">Last sync: ${lastSync}</div>
                 <div class="store-actions">
-                    <button class="btn btn-primary btn-sm" onclick="triggerSync(${store.id})">Sync Now</button>
-                    <button class="btn btn-danger btn-sm" onclick="cancelSync(${store.id})" style="display:none" id="cancel-btn-${store.id}">Cancel Sync</button>
+                    <button class="btn btn-primary btn-sm" onclick="triggerSync(${store.id})">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23,4 23,10 17,10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+                        Sync Now
+                    </button>
+                    <button class="btn btn-danger btn-sm" onclick="cancelSync(${store.id})" style="display:none" id="cancel-btn-${store.id}">Cancel</button>
                     ${sched.running
-                        ? `<button class="btn btn-outline btn-sm" onclick="stopScheduler(${store.id})">Stop Scheduler</button>`
-                        : `<button class="btn btn-outline btn-sm" onclick="startScheduler(${store.id})">Start Scheduler</button>`
+                        ? `<button class="btn btn-outline btn-sm" onclick="stopScheduler(${store.id})">Stop</button>`
+                        : `<button class="btn btn-outline btn-sm" onclick="startScheduler(${store.id})">Start</button>`
                     }
                 </div>
             </div>
@@ -79,12 +75,12 @@ function renderRecentRuns(runs) {
     tbody.innerHTML = runs.map(run => `
         <tr>
             <td>${escapeHtml(run.store_name)}</td>
-            <td>${formatDate(run.started_at)}</td>
-            <td>${statusBadge(run.status)}</td>
+            <td style="font-size: 12px;">${formatDate(run.started_at)}</td>
+            <td>${run.status === 'running' ? '<span class="badge badge-info"><span class="pulse-dot"></span>running</span>' : statusBadge(run.status)}</td>
             <td>${run.products_updated}</td>
             <td>${run.products_published}</td>
             <td>${run.products_unpublished}</td>
-            <td>${run.errors_count}</td>
+            <td>${run.errors_count > 0 ? `<span style="color: var(--error);">${run.errors_count}</span>` : '0'}</td>
             <td>${run.duration_seconds ? run.duration_seconds.toFixed(1) + 's' : '-'}</td>
         </tr>
     `).join('');
@@ -95,13 +91,13 @@ async function triggerSync(storeId) {
         const res = await fetch(`/api/sync/${storeId}/trigger`, { method: 'POST' });
         const data = await res.json();
         if (res.ok) {
-            showAlert('Sync started successfully', 'success');
+            showToast('Sync started successfully', 'success');
             setTimeout(loadDashboard, 2000);
         } else {
-            showAlert(data.error || 'Failed to start sync', 'error');
+            showToast(data.error || 'Failed to start sync', 'error');
         }
     } catch (err) {
-        showAlert('Error: ' + err.message, 'error');
+        showToast('Error: ' + err.message, 'error');
     }
 }
 
@@ -110,13 +106,13 @@ async function startScheduler(storeId) {
         const res = await fetch(`/api/sync/${storeId}/start`, { method: 'POST' });
         const data = await res.json();
         if (res.ok) {
-            showAlert('Scheduler started', 'success');
+            showToast('Scheduler started', 'success');
             loadDashboard();
         } else {
-            showAlert(data.error || 'Failed to start scheduler', 'error');
+            showToast(data.error || 'Failed to start scheduler', 'error');
         }
     } catch (err) {
-        showAlert('Error: ' + err.message, 'error');
+        showToast('Error: ' + err.message, 'error');
     }
 }
 
@@ -125,13 +121,13 @@ async function stopScheduler(storeId) {
         const res = await fetch(`/api/sync/${storeId}/stop`, { method: 'POST' });
         const data = await res.json();
         if (res.ok) {
-            showAlert('Scheduler stopped', 'success');
+            showToast('Scheduler stopped', 'success');
             loadDashboard();
         } else {
-            showAlert(data.error || 'Failed to stop scheduler', 'error');
+            showToast(data.error || 'Failed to stop scheduler', 'error');
         }
     } catch (err) {
-        showAlert('Error: ' + err.message, 'error');
+        showToast('Error: ' + err.message, 'error');
     }
 }
 
@@ -151,44 +147,14 @@ async function cancelSync(storeId) {
         const data = await res.json();
         if (res.ok) {
             const count = data.cancelled || 0;
-            showAlert(`Cancelled ${count} stuck sync(s)`, 'success');
+            showToast(`Cancelled ${count} stuck sync(s)`, 'success');
             loadDashboard();
         } else {
-            showAlert(data.error || 'Failed to cancel sync', 'error');
+            showToast(data.error || 'Failed to cancel sync', 'error');
         }
     } catch (err) {
-        showAlert('Error: ' + err.message, 'error');
+        showToast('Error: ' + err.message, 'error');
     }
-}
-
-function statusBadge(status) {
-    const map = {
-        success: 'badge-success',
-        partial: 'badge-warning',
-        failed: 'badge-error',
-        running: 'badge-info',
-    };
-    return `<span class="badge ${map[status] || 'badge-neutral'}">${status}</span>`;
-}
-
-function formatDate(dateStr) {
-    if (!dateStr) return '-';
-    const d = new Date(dateStr);
-    return d.toLocaleString();
-}
-
-function escapeHtml(str) {
-    if (!str) return '';
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-}
-
-function showAlert(message, type) {
-    const alert = document.getElementById('alert');
-    alert.className = `alert alert-${type} show`;
-    alert.textContent = message;
-    setTimeout(() => alert.classList.remove('show'), 5000);
 }
 
 loadDashboard();

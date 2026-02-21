@@ -6,7 +6,7 @@ async function loadConfigs() {
             populateForm(config);
         }
     } catch (err) {
-        showAlert('Failed to load configs: ' + err.message, 'error');
+        showToast('Failed to load configs: ' + err.message, 'error');
     }
 }
 
@@ -30,7 +30,7 @@ async function saveConfig(configKey) {
     };
 
     if (!data.host || !data.database_name || !data.username || !data.password) {
-        showAlert('All fields are required', 'error');
+        showToast('All fields are required', 'error');
         return;
     }
 
@@ -42,36 +42,34 @@ async function saveConfig(configKey) {
         });
         const result = await res.json();
         if (res.ok) {
-            showAlert(`${configKey.toUpperCase()} config saved`, 'success');
+            showToast(`${configKey.toUpperCase()} config saved`, 'success');
         } else {
-            showAlert(result.error || 'Failed to save', 'error');
+            showToast(result.error || 'Failed to save', 'error');
         }
     } catch (err) {
-        showAlert('Error: ' + err.message, 'error');
+        showToast('Error: ' + err.message, 'error');
     }
 }
 
 async function testConnection(configKey) {
     const endpoint = configKey === 's2s' ? '/api/config/test-s2s' : '/api/config/test-admin';
+    const statusId = configKey === 's2s' ? 's2s-status' : 'admin-status';
+
     try {
-        showAlert('Testing connection...', 'success');
+        showToast('Testing connection...', 'info');
         const res = await fetch(endpoint, { method: 'POST' });
         const data = await res.json();
+        const statusEl = document.getElementById(statusId);
         if (data.success) {
-            showAlert(`${configKey.toUpperCase()}: Connection successful`, 'success');
+            showToast(`${configKey.toUpperCase()}: Connection successful`, 'success');
+            statusEl.innerHTML = '<span class="status-dot connected"></span><span style="color: var(--success);">Connected</span>';
         } else {
-            showAlert(`${configKey.toUpperCase()}: ${data.error || 'Connection failed'}`, 'error');
+            showToast(`${configKey.toUpperCase()}: ${data.error || 'Connection failed'}`, 'error');
+            statusEl.innerHTML = '<span class="status-dot failed"></span><span style="color: var(--error);">Failed</span>';
         }
     } catch (err) {
-        showAlert('Error: ' + err.message, 'error');
+        showToast('Error: ' + err.message, 'error');
     }
-}
-
-function showAlert(message, type) {
-    const alert = document.getElementById('alert');
-    alert.className = `alert alert-${type} show`;
-    alert.textContent = message;
-    setTimeout(() => alert.classList.remove('show'), 5000);
 }
 
 loadConfigs();

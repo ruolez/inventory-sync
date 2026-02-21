@@ -1,78 +1,150 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sync History - Inventory Sync</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
-    <nav class="navbar">
-        <a href="/" class="navbar-brand">Inventory Sync</a>
-        <ul class="navbar-nav">
-            <li><a href="/">Dashboard</a></li>
-            <li><a href="/stores">Stores</a></li>
-            <li><a href="/sql-config">SQL Config</a></li>
-            <li><a href="/sync-history" class="active">Sync History</a></li>
-            <li><a href="/logs">Logs</a></li>
-        </ul>
-    </nav>
-
-    <div class="container">
-        <div class="page-header">
-            <h1>Sync History</h1>
-            <p>View all sync run history across stores</p>
+    <div class="app-layout">
+        <!-- Mobile Header -->
+        <div class="mobile-header">
+            <button class="mobile-menu-btn" onclick="document.getElementById('sidebar').classList.add('mobile-open');document.getElementById('sidebar-overlay').classList.add('active')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+            </button>
+            <span class="mobile-brand">Inventory Sync</span>
         </div>
+        <div class="sidebar-overlay" id="sidebar-overlay" onclick="document.getElementById('sidebar').classList.remove('mobile-open');this.classList.remove('active')"></div>
 
-        <div id="alert" class="alert"></div>
-
-        <div class="card">
-            <div class="filter-bar">
-                <select class="form-control" id="filter-store" onchange="loadHistory()">
-                    <option value="">All Stores</option>
-                </select>
-                <select class="form-control" id="filter-status" onchange="loadHistory()">
-                    <option value="">All Statuses</option>
-                    <option value="success">Success</option>
-                    <option value="partial">Partial</option>
-                    <option value="failed">Failed</option>
-                    <option value="running">Running</option>
-                </select>
-                <button class="btn btn-outline" onclick="loadHistory()">Refresh</button>
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <svg class="sidebar-logo" viewBox="0 0 32 32" fill="none">
+                    <rect width="32" height="32" rx="8" fill="currentColor" fill-opacity="0.15"/>
+                    <path d="M10 16L14 20L22 12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span class="sidebar-brand">Inventory Sync</span>
             </div>
-
-            <div class="table-wrapper">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>Store</th>
-                            <th>Started</th>
-                            <th>Status</th>
-                            <th>Total</th>
-                            <th>Updated</th>
-                            <th>Published</th>
-                            <th>Unpublished</th>
-                            <th>Skipped</th>
-                            <th>Errors</th>
-                            <th>Duration</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody id="history-body">
-                        <tr><td colspan="12" class="loading-text">Loading...</td></tr>
-                    </tbody>
-                </table>
+            <nav class="sidebar-nav">
+                <a href="/" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                    <span>Dashboard</span>
+                </a>
+                <a href="/stores" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 7v13a2 2 0 002 2h14a2 2 0 002-2V7l-3-5z"/><line x1="3" y1="7" x2="21" y2="7"/><path d="M16 11a4 4 0 01-8 0"/></svg>
+                    <span>Stores</span>
+                </a>
+                <a href="/sql-config" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+                    <span>SQL Config</span>
+                </a>
+                <a href="/sync-history" class="nav-item active">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>
+                    <span>Sync History</span>
+                </a>
+                <a href="/logs" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10,9 9,9 8,9"/></svg>
+                    <span>Logs</span>
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <button class="sidebar-btn" id="theme-toggle-btn" onclick="toggleTheme()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                    <span>Light Mode</span>
+                </button>
+                <button class="sidebar-btn" onclick="toggleSidebar()">
+                    <svg class="collapse-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15,18 9,12 15,6"/></svg>
+                    <span>Collapse</span>
+                </button>
             </div>
+        </aside>
 
-            <div style="margin-top: 16px; display: flex; gap: 8px; justify-content: center;">
-                <button class="btn btn-outline btn-sm" id="prev-btn" onclick="prevPage()" disabled>Previous</button>
-                <span id="page-info" style="padding: 6px 12px; font-size: 13px; color: var(--text-secondary);"></span>
-                <button class="btn btn-outline btn-sm" id="next-btn" onclick="nextPage()">Next</button>
+        <!-- Main Content -->
+        <main class="main-content">
+            <div class="container">
+                <div class="page-header">
+                    <h1>Sync History</h1>
+                    <p>View all sync run history across stores</p>
+                </div>
+
+                <div class="card">
+                    <div class="filter-bar">
+                        <select class="form-control" id="filter-store" onchange="currentPage=0;loadHistory()">
+                            <option value="">All Stores</option>
+                        </select>
+                        <select class="form-control" id="filter-status" onchange="currentPage=0;loadHistory()">
+                            <option value="">All Statuses</option>
+                            <option value="success">Success</option>
+                            <option value="partial">Partial</option>
+                            <option value="failed">Failed</option>
+                            <option value="running">Running</option>
+                        </select>
+                        <button class="btn btn-outline" onclick="loadHistory()">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23,4 23,10 17,10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+                            Refresh
+                        </button>
+                    </div>
+
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Store</th>
+                                    <th>Started</th>
+                                    <th>Status</th>
+                                    <th>Total</th>
+                                    <th>Updated</th>
+                                    <th>Published</th>
+                                    <th>Unpublished</th>
+                                    <th>Skipped</th>
+                                    <th>Errors</th>
+                                    <th>Duration</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="history-body">
+                                <tr><td colspan="12" class="loading-text"><span class="spinner"></span></td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="pagination">
+                        <button class="btn btn-outline btn-sm" id="prev-btn" onclick="prevPage()" disabled>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15,18 9,12 15,6"/></svg>
+                            Previous
+                        </button>
+                        <span class="page-info" id="page-info"></span>
+                        <button class="btn btn-outline btn-sm" id="next-btn" onclick="nextPage()">
+                            Next
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9,6 15,12 9,18"/></svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toast-container"></div>
+
+    <!-- Confirm Dialog -->
+    <div class="confirm-overlay" id="confirm-modal">
+        <div class="confirm-dialog">
+            <h3 id="confirm-title">Confirm</h3>
+            <p id="confirm-message"></p>
+            <div class="confirm-actions">
+                <button class="btn btn-outline" id="confirm-no">Cancel</button>
+                <button class="btn btn-danger" id="confirm-yes">Confirm</button>
             </div>
         </div>
     </div>
 
+    <script src="/static/js/utils.js"></script>
     <script src="/static/js/sync-history.js"></script>
 </body>
 </html>
