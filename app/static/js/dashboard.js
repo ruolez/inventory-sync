@@ -91,18 +91,36 @@ function renderRecentRuns(runs) {
         return;
     }
 
-    tbody.innerHTML = runs.map(run => `
+    tbody.innerHTML = runs.map(run => {
+        const isRunning = run.status === 'running';
+        const processed = run.products_updated + run.products_published + run.products_unpublished + run.products_skipped + run.errors_count;
+        const total = run.total_products || 0;
+        const statusCell = isRunning && total > 0
+            ? `<span class="badge badge-info"><span class="pulse-dot"></span>${processed}/${total}</span>`
+            : isRunning
+            ? '<span class="badge badge-info"><span class="pulse-dot"></span>running</span>'
+            : statusBadge(run.status);
+        let durationCell;
+        if (run.duration_seconds) {
+            durationCell = run.duration_seconds.toFixed(1) + 's';
+        } else if (isRunning && run.started_at) {
+            const elapsed = (Date.now() - new Date(run.started_at).getTime()) / 1000;
+            durationCell = elapsed >= 60 ? Math.floor(elapsed / 60) + 'm ' + Math.floor(elapsed % 60) + 's' : Math.floor(elapsed) + 's';
+        } else {
+            durationCell = '-';
+        }
+        return `
         <tr>
             <td>${escapeHtml(run.store_name)}</td>
             <td style="font-size: 12px;">${formatDate(run.started_at)}</td>
-            <td>${run.status === 'running' ? '<span class="badge badge-info"><span class="pulse-dot"></span>running</span>' : statusBadge(run.status)}</td>
+            <td>${statusCell}</td>
             <td>${run.products_updated}</td>
             <td>${run.products_published}</td>
             <td>${run.products_unpublished}</td>
             <td>${run.errors_count > 0 ? `<span style="color: var(--error);">${run.errors_count}</span>` : '0'}</td>
-            <td>${run.duration_seconds ? run.duration_seconds.toFixed(1) + 's' : '-'}</td>
-        </tr>
-    `).join('');
+            <td>${durationCell}</td>
+        </tr>`;
+    }).join('');
 }
 
 async function triggerSync(storeId) {

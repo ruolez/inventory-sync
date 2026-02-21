@@ -112,6 +112,7 @@ def run_sync(store_id, pg):
         logger.info("Matched %d Shopify barcodes against SQL data", len(inventory))
 
         counters["total_products"] = len(inventory)
+        pg.update_sync_run(run_id, counters)
 
         logger.info("=== Phase 4: Updating Shopify inventory ===")
         processed = 0
@@ -171,6 +172,8 @@ def run_sync(store_id, pg):
             product_logs.append(log_entry)
 
             processed += 1
+            if processed % 100 == 0:
+                pg.update_sync_run(run_id, counters)
             if processed % 500 == 0:
                 logger.info("Processing %d/%d products...", processed, len(inventory))
 
