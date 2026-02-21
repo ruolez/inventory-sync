@@ -1,5 +1,6 @@
 import os
 import logging
+from datetime import datetime, timedelta, timezone
 import psycopg2
 import psycopg2.extras
 import pymssql
@@ -82,6 +83,8 @@ CREATE TABLE IF NOT EXISTS product_logs (
 CREATE INDEX IF NOT EXISTS idx_sync_runs_store ON sync_runs(store_id, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_product_logs_run ON product_logs(sync_run_id);
 CREATE INDEX IF NOT EXISTS idx_product_logs_upc ON product_logs(product_upc);
+CREATE INDEX IF NOT EXISTS idx_product_logs_action_created ON product_logs(action, created_at);
+CREATE INDEX IF NOT EXISTS idx_product_logs_store_created ON product_logs(store_id, created_at);
 """
 
 
@@ -489,6 +492,173 @@ class PostgresManager:
                     "changes_24h": changes_24h,
                     "recent_runs": recent_runs,
                 }
+
+
+    # --- Analytics ---
+
+    def _analytics_cutoff(self, range_hours):
+        return datetime.now(timezone.utc) - timedelta(hours=range_hours)
+
+    def get_analytics_summary(self, store_id=None, range_hours=168):
+        cutoff = self._analytics_cutoff(range_hours)
+        with self.get_conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                store_filter = "AND store_id = %s" if store_id else ""
+                params_sr = [cutoff, store_id] if store_id else [cutoff]
+
+                cur.execute(
+                    f"SELECT "
+                    f"COUNT(*) as total_syncs, "
+                    f"COUNT(*) FILTER (WHERE status = 'success') as successful_syncs, "
+                    f"COUNT(*) FILTER (WHERE status = 'failed') as failed_syncs, "
+                    f"COUNT(*) FILTER (WHERE status = 'partial') as partial_syncs "
+                    f"FROM sync_runs WHERE started_at >= %s {store_filter}",
+                    params_sr,
+                )
+                sync_stats = dict(cur.fetchone())
+
+                params_pl = [cutoff, store_id] if store_id else [cutoff]
+                cur.execute(
+                    f"SELECT "
+                    f"COUNT(*) FILTER (WHERE action = 'inventory_update') as products_updated, "
+                    f"COUNT(*) FILTER (WHERE action = 'republish') as products_published, "
+                    f"COUNT(*) FILTER (WHERE action = 'unpublish') as products_unpublished, "
+                    f"COUNT(*) FILTER (WHERE action = 'error') as errors_count, "
+                    f"COUNT(*) as total_actions "
+                    f"FROM product_logs WHERE created_at >= %s {store_filter}",
+                    params_pl,
+                )
+                log_stats = dict(cur.fetchone())
+
+                total = sync_stats["total_syncs"]
+                success_rate = round(sync_stats["successful_syncs"] / total * 100, 1) if total > 0 else 0
+                total_actions = log_stats["total_actions"]
+                error_rate = round(log_stats["errors_count"] / total_actions * 100, 1) if total_actions > 0 else 0
+
+                return {**sync_stats, **log_stats, "success_rate": success_rate, "error_rate": error_rate}
+
+    def get_analytics_stock_trend(self, store_id=None, range_hours=168):
+        cutoff = self._analytics_cutoff(range_hours)
+        store_filter = "AND store_id = %s" if store_id else ""
+        params = [cutoff, store_id] if store_id else [cutoff]
+        with self.get_conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    f"SELECT DATE(created_at) as day, "
+                    f"COUNT(*) FILTER (WHERE action = 'republish') as published, "
+                    f"COUNT(*) FILTER (WHERE action = 'unpublish') as unpublished "
+                    f"FROM product_logs "
+                    f"WHERE action IN ('republish', 'unpublish') AND created_at >= %s {store_filter} "
+                    f"GROUP BY DATE(created_at) ORDER BY day",
+                    params,
+                )
+                return [dict(r) for r in cur.fetchall()]
+
+    def get_analytics_sync_activity(self, store_id=None, range_hours=168):
+        cutoff = self._analytics_cutoff(range_hours)
+        store_filter = "AND store_id = %s" if store_id else ""
+        params = [cutoff, store_id] if store_id else [cutoff]
+        with self.get_conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    f"SELECT DATE(started_at) as day, "
+                    f"SUM(COALESCE(products_updated, 0)) as updated, "
+                    f"SUM(COALESCE(products_published, 0)) as published, "
+                    f"SUM(COALESCE(products_unpublished, 0)) as unpublished, "
+                    f"SUM(COALESCE(products_skipped, 0)) as skipped, "
+                    f"SUM(COALESCE(errors_count, 0)) as errors "
+                    f"FROM sync_runs WHERE started_at >= %s {store_filter} "
+                    f"GROUP BY DATE(started_at) ORDER BY day",
+                    params,
+                )
+                daily_activity = [dict(r) for r in cur.fetchall()]
+
+                cur.execute(
+                    f"SELECT id, started_at, duration_seconds, status "
+                    f"FROM sync_runs WHERE started_at >= %s AND duration_seconds IS NOT NULL {store_filter} "
+                    f"ORDER BY started_at",
+                    params,
+                )
+                duration_trend = [dict(r) for r in cur.fetchall()]
+
+                return {"daily_activity": daily_activity, "duration_trend": duration_trend}
+
+    def get_analytics_action_distribution(self, store_id=None, range_hours=168):
+        cutoff = self._analytics_cutoff(range_hours)
+        store_filter = "AND store_id = %s" if store_id else ""
+        params = [cutoff, store_id] if store_id else [cutoff]
+        with self.get_conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    f"SELECT action, COUNT(*) as count "
+                    f"FROM product_logs WHERE created_at >= %s {store_filter} "
+                    f"GROUP BY action ORDER BY count DESC",
+                    params,
+                )
+                return [dict(r) for r in cur.fetchall()]
+
+    def get_analytics_top_movers(self, store_id=None, range_hours=168, limit=20):
+        cutoff = self._analytics_cutoff(range_hours)
+        store_filter = "AND store_id = %s" if store_id else ""
+        params = [cutoff, store_id, limit] if store_id else [cutoff, limit]
+        with self.get_conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    f"SELECT product_upc, product_description, "
+                    f"SUM(ABS(COALESCE(new_quantity, 0) - COALESCE(old_quantity, 0))) as total_change, "
+                    f"COUNT(*) as update_count "
+                    f"FROM product_logs "
+                    f"WHERE action = 'inventory_update' AND created_at >= %s {store_filter} "
+                    f"GROUP BY product_upc, product_description "
+                    f"ORDER BY total_change DESC LIMIT %s",
+                    params,
+                )
+                top_movers = [dict(r) for r in cur.fetchall()]
+
+                cur.execute(
+                    f"SELECT product_upc, product_description, COUNT(*) as oos_count "
+                    f"FROM product_logs "
+                    f"WHERE action = 'unpublish' AND created_at >= %s {store_filter} "
+                    f"GROUP BY product_upc, product_description "
+                    f"ORDER BY oos_count DESC LIMIT %s",
+                    params,
+                )
+                frequent_oos = [dict(r) for r in cur.fetchall()]
+
+                return {"top_movers": top_movers, "frequent_oos": frequent_oos}
+
+    def get_analytics_errors(self, store_id=None, range_hours=168, limit=20):
+        cutoff = self._analytics_cutoff(range_hours)
+        store_filter = "AND pl.store_id = %s" if store_id else ""
+        params_recent = [cutoff, store_id, limit] if store_id else [cutoff, limit]
+        with self.get_conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    f"SELECT pl.product_upc, pl.product_description, pl.error_message, "
+                    f"pl.created_at, s.store_name "
+                    f"FROM product_logs pl JOIN stores s ON pl.store_id = s.id "
+                    f"WHERE pl.action = 'error' AND pl.created_at >= %s {store_filter} "
+                    f"ORDER BY pl.created_at DESC LIMIT %s",
+                    params_recent,
+                )
+                recent_errors = [dict(r) for r in cur.fetchall()]
+
+                store_filter_pl = "AND store_id = %s" if store_id else ""
+                params_trend = [cutoff, store_id] if store_id else [cutoff]
+                cur.execute(
+                    f"SELECT DATE(created_at) as day, "
+                    f"COUNT(*) FILTER (WHERE action = 'error') as errors, "
+                    f"COUNT(*) as total, "
+                    f"CASE WHEN COUNT(*) > 0 "
+                    f"THEN ROUND(COUNT(*) FILTER (WHERE action = 'error')::numeric / COUNT(*) * 100, 1) "
+                    f"ELSE 0 END as error_rate "
+                    f"FROM product_logs WHERE created_at >= %s {store_filter_pl} "
+                    f"GROUP BY DATE(created_at) ORDER BY day",
+                    params_trend,
+                )
+                error_trend = [dict(r) for r in cur.fetchall()]
+
+                return {"recent_errors": recent_errors, "error_trend": error_trend}
 
 
 class MSSQLManager:

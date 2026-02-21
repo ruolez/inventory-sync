@@ -72,6 +72,11 @@ def logs_page():
     return render_template("logs.html")
 
 
+@app.route("/analytics")
+def analytics_page():
+    return render_template("analytics.html")
+
+
 # --- Health ---
 
 
@@ -337,6 +342,61 @@ def get_logs():
 def dashboard_stats():
     stats = pg.get_dashboard_stats()
     return to_json(stats)
+
+
+def _parse_range(range_str):
+    return {"24h": 24, "7d": 168, "30d": 720, "90d": 2160}.get(range_str, 168)
+
+
+# --- Analytics API ---
+
+
+@app.route("/api/analytics/summary", methods=["GET"])
+def analytics_summary():
+    store_id = request.args.get("store_id", type=int)
+    range_hours = _parse_range(request.args.get("range", "7d"))
+    data = pg.get_analytics_summary(store_id=store_id, range_hours=range_hours)
+    return to_json(data)
+
+
+@app.route("/api/analytics/stock-trend", methods=["GET"])
+def analytics_stock_trend():
+    store_id = request.args.get("store_id", type=int)
+    range_hours = _parse_range(request.args.get("range", "7d"))
+    data = pg.get_analytics_stock_trend(store_id=store_id, range_hours=range_hours)
+    return to_json(data)
+
+
+@app.route("/api/analytics/sync-activity", methods=["GET"])
+def analytics_sync_activity():
+    store_id = request.args.get("store_id", type=int)
+    range_hours = _parse_range(request.args.get("range", "7d"))
+    data = pg.get_analytics_sync_activity(store_id=store_id, range_hours=range_hours)
+    return to_json(data)
+
+
+@app.route("/api/analytics/action-distribution", methods=["GET"])
+def analytics_action_distribution():
+    store_id = request.args.get("store_id", type=int)
+    range_hours = _parse_range(request.args.get("range", "7d"))
+    data = pg.get_analytics_action_distribution(store_id=store_id, range_hours=range_hours)
+    return to_json(data)
+
+
+@app.route("/api/analytics/top-movers", methods=["GET"])
+def analytics_top_movers():
+    store_id = request.args.get("store_id", type=int)
+    range_hours = _parse_range(request.args.get("range", "7d"))
+    data = pg.get_analytics_top_movers(store_id=store_id, range_hours=range_hours)
+    return to_json(data)
+
+
+@app.route("/api/analytics/errors", methods=["GET"])
+def analytics_errors():
+    store_id = request.args.get("store_id", type=int)
+    range_hours = _parse_range(request.args.get("range", "7d"))
+    data = pg.get_analytics_errors(store_id=store_id, range_hours=range_hours)
+    return to_json(data)
 
 
 if __name__ == "__main__":
