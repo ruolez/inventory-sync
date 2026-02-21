@@ -75,7 +75,7 @@ def run_sync(store_id, pg):
 
         logger.info("=== Phase 1: Fetching Shopify variants at location %s ===", location_id)
         phase_start = time.time()
-        variants = shopify.get_all_variants(location_id)
+        variants = shopify.get_all_variants(location_id, publication_id=publication_id)
         logger.info(
             "Found %d variants with barcodes at location (%.1fs)",
             len(variants),
@@ -114,11 +114,14 @@ def run_sync(store_id, pg):
         counters["total_products"] = len(inventory)
         pg.update_sync_run(run_id, counters)
 
-        logger.info("=== Phase 4: Updating Shopify inventory ===")
-        processed = 0
+        logger.info("=== Phase 4A: Classifying products ===")
+        log_entries_map = {}
+        items_to_update = []
+        products_to_publish = {}
+        products_to_unpublish = {}
+
         for upc, inv_data in inventory.items():
             variant = variants[upc]
-
             new_qty = inv_data["final"]
             old_qty = variant["inventory_quantity"]
             log_entry = {
@@ -137,45 +140,101 @@ def run_sync(store_id, pg):
                 "error_message": None,
                 "created_at": sql_server_start,
             }
+            log_entries_map[upc] = log_entry
 
-            try:
-                if new_qty != old_qty:
-                    shopify.set_inventory_quantity(
-                        variant["inventory_item_id"], location_id, new_qty
-                    )
-                    log_entry["action"] = "inventory_update"
-                    counters["products_updated"] += 1
+            if new_qty != old_qty:
+                log_entry["action"] = "inventory_update"
+                counters["products_updated"] += 1
+                items_to_update.append({
+                    "inventory_item_id": variant["inventory_item_id"],
+                    "quantity": new_qty,
+                    "upc": upc,
+                })
 
                 if publication_id:
-                    is_published = shopify.is_product_published(
-                        variant["product_id"], publication_id
-                    )
+                    product_id = variant["product_id"]
+                    is_published = variant.get("is_published", False)
+                    if new_qty > 0 and not is_published:
+                        products_to_publish[product_id] = upc
+                    elif new_qty <= 0 and is_published:
+                        if product_id not in products_to_publish:
+                            products_to_unpublish[product_id] = upc
+            else:
+                counters["products_skipped"] += 1
 
-                    if new_qty <= 0 and is_published:
-                        shopify.unpublish_product(variant["product_id"], publication_id)
-                        log_entry["action"] = "unpublish"
-                        counters["products_unpublished"] += 1
-                    elif new_qty > 0 and not is_published:
-                        shopify.publish_product(variant["product_id"], publication_id)
-                        log_entry["action"] = "republish"
-                        counters["products_published"] += 1
+        logger.info(
+            "Classification: %d to update, %d to publish, %d to unpublish, %d skipped",
+            len(items_to_update),
+            len(products_to_publish),
+            len(products_to_unpublish),
+            counters["products_skipped"],
+        )
+        pg.update_sync_run(run_id, counters)
 
-                if log_entry["action"] == "skip":
-                    counters["products_skipped"] += 1
+        logger.info("=== Phase 4B: Batch inventory updates (%d items) ===", len(items_to_update))
+        batch_size = 250
+        for i in range(0, len(items_to_update), batch_size):
+            batch = items_to_update[i : i + batch_size]
+            try:
+                shopify.set_inventory_quantities_batch(batch, location_id)
+            except Exception as batch_err:
+                logger.warning(
+                    "Batch %d-%d failed (%s), falling back to individual updates",
+                    i, i + len(batch), str(batch_err),
+                )
+                for item in batch:
+                    try:
+                        shopify.set_inventory_quantity(
+                            item["inventory_item_id"], location_id, item["quantity"]
+                        )
+                    except Exception as e:
+                        upc = item["upc"]
+                        logger.error("Error updating UPC %s: %s", upc, str(e))
+                        log_entries_map[upc]["action"] = "error"
+                        log_entries_map[upc]["error_message"] = str(e)
+                        counters["products_updated"] -= 1
+                        counters["errors_count"] += 1
 
-            except Exception as e:
-                logger.error("Error processing UPC %s: %s", upc, str(e))
-                log_entry["action"] = "error"
-                log_entry["error_message"] = str(e)
-                counters["errors_count"] += 1
+            pg.update_sync_run(run_id, counters)
+            if i + batch_size < len(items_to_update):
+                logger.info(
+                    "Inventory updates: %d/%d batched...",
+                    min(i + batch_size, len(items_to_update)),
+                    len(items_to_update),
+                )
 
-            product_logs.append(log_entry)
+        if publication_id:
+            logger.info(
+                "=== Phase 4C: Publish/unpublish (%d publish, %d unpublish) ===",
+                len(products_to_publish),
+                len(products_to_unpublish),
+            )
+            for product_id, upc in products_to_publish.items():
+                try:
+                    shopify.publish_product(product_id, publication_id)
+                    log_entries_map[upc]["action"] = "republish"
+                    counters["products_published"] += 1
+                except Exception as e:
+                    logger.error("Error publishing product %s (UPC %s): %s", product_id, upc, str(e))
+                    log_entries_map[upc]["action"] = "error"
+                    log_entries_map[upc]["error_message"] = str(e)
+                    counters["errors_count"] += 1
 
-            processed += 1
-            if processed % 100 == 0:
-                pg.update_sync_run(run_id, counters)
-            if processed % 500 == 0:
-                logger.info("Processing %d/%d products...", processed, len(inventory))
+            for product_id, upc in products_to_unpublish.items():
+                try:
+                    shopify.unpublish_product(product_id, publication_id)
+                    log_entries_map[upc]["action"] = "unpublish"
+                    counters["products_unpublished"] += 1
+                except Exception as e:
+                    logger.error("Error unpublishing product %s (UPC %s): %s", product_id, upc, str(e))
+                    log_entries_map[upc]["action"] = "error"
+                    log_entries_map[upc]["error_message"] = str(e)
+                    counters["errors_count"] += 1
+
+            pg.update_sync_run(run_id, counters)
+
+        logger.info("=== Phase 4D: Finalizing ===")
+        product_logs = list(log_entries_map.values())
 
         if product_logs:
             pg.create_product_logs_batch(product_logs)
@@ -217,6 +276,11 @@ def run_sync(store_id, pg):
         duration = time.time() - start_time
         logger.error("Sync failed for store %s: %s", store_id, str(e))
 
+        try:
+            if not product_logs and log_entries_map:
+                product_logs = list(log_entries_map.values())
+        except NameError:
+            pass
         if product_logs:
             pg.create_product_logs_batch(product_logs)
 

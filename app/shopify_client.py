@@ -113,8 +113,8 @@ class ShopifyClient:
                 return pub
         return pubs[0] if pubs else None
 
-    def get_all_variants(self, location_id):
-        query = """
+    def get_all_variants(self, location_id, publication_id=None):
+        base_query = """
         query($locationId: ID!, $cursor: String) {
           location(id: $locationId) {
             inventoryLevels(first: 250, after: $cursor) {
@@ -144,12 +144,46 @@ class ShopifyClient:
           }
         }
         """
+        pub_query = """
+        query($locationId: ID!, $cursor: String, $publicationId: ID!) {
+          location(id: $locationId) {
+            inventoryLevels(first: 250, after: $cursor) {
+              edges {
+                node {
+                  quantities(names: ["available"]) {
+                    quantity
+                  }
+                  item {
+                    id
+                    variant {
+                      id
+                      barcode
+                      product {
+                        id
+                        title
+                        publishedOnPublication(publicationId: $publicationId)
+                      }
+                    }
+                  }
+                }
+              }
+              pageInfo {
+                hasNextPage
+                endCursor
+              }
+            }
+          }
+        }
+        """
+        query = pub_query if publication_id else base_query
         results = {}
         cursor = None
         total_fetched = 0
 
         while True:
             variables = {"locationId": location_id}
+            if publication_id:
+                variables["publicationId"] = publication_id
             if cursor:
                 variables["cursor"] = cursor
             data = self._request(query, variables)
@@ -168,13 +202,18 @@ class ShopifyClient:
                 if barcode:
                     quantities = node.get("quantities", [])
                     available = quantities[0]["quantity"] if quantities else 0
-                    results[barcode] = {
+                    result_entry = {
                         "variant_id": variant["id"],
                         "inventory_quantity": available,
                         "inventory_item_id": item["id"],
                         "product_id": variant["product"]["id"],
                         "product_title": variant["product"]["title"],
                     }
+                    if publication_id:
+                        result_entry["is_published"] = variant["product"].get(
+                            "publishedOnPublication"
+                        )
+                    results[barcode] = result_entry
 
             logger.info(
                 "Fetched %d inventory levels so far (%d with barcodes)...",
@@ -267,6 +306,45 @@ class ShopifyClient:
         if errors:
             error_msgs = [e.get("message", str(e)) for e in errors]
             raise Exception(f"Inventory update errors: {'; '.join(error_msgs)}")
+        return True
+
+    def set_inventory_quantities_batch(self, items, location_id):
+        mutation = """
+        mutation inventorySetQuantities($input: InventorySetQuantitiesInput!) {
+          inventorySetQuantities(input: $input) {
+            inventoryAdjustmentGroup {
+              createdAt
+            }
+            userErrors {
+              field
+              message
+            }
+          }
+        }
+        """
+        quantities = [
+            {
+                "inventoryItemId": item["inventory_item_id"],
+                "locationId": location_id,
+                "quantity": item["quantity"],
+            }
+            for item in items
+        ]
+        variables = {
+            "input": {
+                "name": "available",
+                "reason": "correction",
+                "ignoreCompareQuantity": True,
+                "quantities": quantities,
+            }
+        }
+        data = self._request(mutation, variables)
+        errors = (
+            data.get("inventorySetQuantities", {}).get("userErrors", [])
+        )
+        if errors:
+            error_msgs = [e.get("message", str(e)) for e in errors]
+            raise Exception(f"Batch inventory update errors: {'; '.join(error_msgs)}")
         return True
 
     def is_product_published(self, product_id, publication_id):
