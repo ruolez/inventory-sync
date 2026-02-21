@@ -1,4 +1,6 @@
 let schedulerStatuses = {};
+let pollTimer = null;
+const POLL_INTERVAL = 5000;
 
 async function loadDashboard() {
     try {
@@ -21,9 +23,26 @@ async function loadDashboard() {
         renderStoreCards(stores);
         renderRecentRuns(stats.recent_runs || []);
         updateCancelButtons(runningSyncs, stores);
+
+        if (stats.running_syncs > 0) {
+            startPolling();
+        } else {
+            stopPolling();
+        }
     } catch (err) {
         showToast('Failed to load dashboard: ' + err.message, 'error');
     }
+}
+
+function startPolling() {
+    if (pollTimer) return;
+    pollTimer = setInterval(loadDashboard, POLL_INTERVAL);
+}
+
+function stopPolling() {
+    if (!pollTimer) return;
+    clearInterval(pollTimer);
+    pollTimer = null;
 }
 
 function renderStoreCards(stores) {
@@ -92,7 +111,8 @@ async function triggerSync(storeId) {
         const data = await res.json();
         if (res.ok) {
             showToast('Sync started successfully', 'success');
-            setTimeout(loadDashboard, 2000);
+            setTimeout(loadDashboard, 1000);
+            startPolling();
         } else {
             showToast(data.error || 'Failed to start sync', 'error');
         }
