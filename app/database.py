@@ -99,6 +99,9 @@ class PostgresManager:
         with self.get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(SCHEMA_SQL)
+                cur.execute(
+                    "ALTER TABLE product_logs ALTER COLUMN product_upc TYPE VARCHAR(50)"
+                )
             conn.commit()
         logger.info("PostgreSQL tables initialized")
 
