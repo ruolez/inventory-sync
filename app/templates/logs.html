@@ -110,7 +110,7 @@
                                     <th>Old Qty</th>
                                     <th>New Qty</th>
                                     <th>Action</th>
-                                    <th>Error</th>
+                                    <th></th>
                                 </tr>
                             </thead>
                             <tbody id="logs-body">
@@ -133,6 +133,22 @@
                 </div>
             </div>
         </main>
+    </div>
+
+    <!-- Error Detail Modal -->
+    <div class="modal-overlay" id="error-detail-modal">
+        <div class="modal" style="max-width: 600px;">
+            <div class="modal-header">
+                <h3>Error Details</h3>
+                <button class="modal-close" onclick="closeErrorDetail()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <pre id="error-detail-text" style="white-space: pre-wrap; word-break: break-word; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--error); background: var(--bg-2); padding: 16px; border-radius: var(--radius); border: 1px solid var(--border);"></pre>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeErrorDetail()">Close</button>
+            </div>
+        </div>
     </div>
 
     <!-- Toast Container -->

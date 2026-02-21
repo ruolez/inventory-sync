@@ -52,21 +52,37 @@ function renderLogs(logs) {
         return;
     }
 
-    tbody.innerHTML = logs.map(log => `
-        <tr>
+    tbody.innerHTML = logs.map(log => {
+        const hasError = log.error_message && log.error_message.trim();
+        const errorIcon = hasError
+            ? `<button class="btn btn-ghost btn-icon" onclick="showErrorDetail(this)" data-error="${escapeHtml(log.error_message)}" title="View error"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--error)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></button>`
+            : '';
+        return `<tr>
             <td style="font-size: 11px; white-space: nowrap;">${formatDate(log.created_at)}</td>
             <td>${escapeHtml(log.store_name)}</td>
             <td class="mono">${escapeHtml(log.product_upc)}</td>
-            <td class="text-truncate">${escapeHtml(log.product_description || '')}</td>
+            <td>${escapeHtml(log.product_description || '')}</td>
             <td>${log.quantity_on_hand != null ? log.quantity_on_hand : '-'}</td>
             <td>${log.pending_po_quantity != null ? log.pending_po_quantity : '-'}</td>
             <td>${log.in_progress_quantity != null ? log.in_progress_quantity : '-'}</td>
             <td>${log.old_quantity != null ? log.old_quantity : '-'}</td>
             <td>${log.new_quantity != null ? log.new_quantity : '-'}</td>
-            <td>${actionBadge(log.action)}</td>
-            <td class="text-truncate" title="${escapeHtml(log.error_message || '')}">${escapeHtml(log.error_message || '')}</td>
-        </tr>
-    `).join('');
+            <td style="white-space: nowrap;">${actionBadge(log.action)}</td>
+            <td>${errorIcon}</td>
+        </tr>`;
+    }).join('');
+}
+
+function showErrorDetail(btn) {
+    const error = btn.getAttribute('data-error');
+    if (!error) return;
+    const overlay = document.getElementById('error-detail-modal');
+    document.getElementById('error-detail-text').textContent = error;
+    overlay.classList.add('active');
+}
+
+function closeErrorDetail() {
+    document.getElementById('error-detail-modal').classList.remove('active');
 }
 
 function debounceSearch() {
