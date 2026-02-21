@@ -26,7 +26,7 @@ NC='\033[0m' # No Color
 APP_NAME="Inventory Sync"
 INSTALL_DIR="/opt/inventory-sync"
 REPO_URL="https://github.com/ruolez/inventory-sync.git"
-APP_PORT="5557"
+APP_PORT="80"
 COMPOSE_PROJECT="inventory-sync"
 
 ################################################################################
@@ -263,10 +263,10 @@ main_install() {
 
     print_header "Installation Complete!"
     echo ""
-    print_success "Application is running at: http://$IP_ADDRESS:$APP_PORT"
+    print_success "Application is running at: http://$IP_ADDRESS"
     echo ""
     print_info "Next steps:"
-    echo "  1. Open http://$IP_ADDRESS:$APP_PORT in your browser"
+    echo "  1. Open http://$IP_ADDRESS in your browser"
     echo "  2. Go to Settings"
     echo "  3. Add stores and configure SQL Server connections"
     echo "  4. Start syncing inventory!"
@@ -324,7 +324,7 @@ update_application() {
 
     echo ""
     print_success "Application updated successfully!"
-    print_success "Access the app at: http://$(hostname -I | awk '{print $1}'):$APP_PORT"
+    print_success "Access the app at: http://$(hostname -I | awk '{print $1}')"
     echo ""
     print_info "All stores, SQL configs, sync history, and product logs have been preserved."
     print_info "To view logs: cd $INSTALL_DIR && docker compose logs -f"
