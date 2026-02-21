@@ -310,10 +310,39 @@ class PostgresManager:
         with self.get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
+                    "UPDATE sync_runs SET status = 'failed', "
+                    "error_message = 'Timed out (exceeded 15 minutes)', "
+                    "finished_at = NOW() "
+                    "WHERE store_id = %s AND status = 'running' "
+                    "AND started_at < NOW() - INTERVAL '15 minutes'",
+                    (store_id,),
+                )
+                timed_out = cur.rowcount
+            conn.commit()
+            if timed_out > 0:
+                logger.info("Auto-timed out %d stuck sync(s) for store %s", timed_out, store_id)
+            with conn.cursor() as cur:
+                cur.execute(
                     "SELECT COUNT(*) FROM sync_runs WHERE store_id = %s AND status = 'running'",
                     (store_id,),
                 )
                 return cur.fetchone()[0] > 0
+
+    def cancel_stuck_syncs(self, store_id):
+        with self.get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE sync_runs SET status = 'failed', "
+                    "error_message = 'Manually cancelled', "
+                    "finished_at = NOW() "
+                    "WHERE store_id = %s AND status = 'running'",
+                    (store_id,),
+                )
+                cancelled = cur.rowcount
+            conn.commit()
+            if cancelled > 0:
+                logger.info("Cancelled %d stuck sync(s) for store %s", cancelled, store_id)
+            return cancelled
 
     def get_sync_runs(self, store_id=None, status=None, limit=50, offset=0):
         query = (

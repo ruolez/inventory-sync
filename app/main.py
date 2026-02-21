@@ -256,6 +256,15 @@ def trigger_sync(store_id):
     return jsonify({"success": True, "message": "Sync started"})
 
 
+@app.route("/api/sync/<int:store_id>/cancel", methods=["POST"])
+def cancel_sync(store_id):
+    store = pg.get_store(store_id)
+    if not store:
+        return jsonify({"error": "Store not found"}), 404
+    cancelled = pg.cancel_stuck_syncs(store_id)
+    return jsonify({"cancelled": cancelled})
+
+
 @app.route("/api/sync/<int:store_id>/start", methods=["POST"])
 def start_scheduler(store_id):
     store = pg.get_store(store_id)

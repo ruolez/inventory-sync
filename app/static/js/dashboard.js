@@ -2,14 +2,16 @@ let schedulerStatuses = {};
 
 async function loadDashboard() {
     try {
-        const [statsRes, storesRes, statusRes] = await Promise.all([
+        const [statsRes, storesRes, statusRes, runningRes] = await Promise.all([
             fetch('/api/dashboard/stats'),
             fetch('/api/stores'),
             fetch('/api/sync/status'),
+            fetch('/api/history?status=running&limit=50'),
         ]);
         const stats = await statsRes.json();
         const stores = await storesRes.json();
         schedulerStatuses = await statusRes.json();
+        const runningSyncs = await runningRes.json();
 
         document.getElementById('stat-stores').textContent = stats.total_stores;
         document.getElementById('stat-running').textContent = stats.running_syncs;
@@ -18,6 +20,7 @@ async function loadDashboard() {
 
         renderStoreCards(stores);
         renderRecentRuns(stats.recent_runs || []);
+        updateCancelButtons(runningSyncs, stores);
     } catch (err) {
         showAlert('Failed to load dashboard: ' + err.message, 'error');
     }
@@ -55,6 +58,7 @@ function renderStoreCards(stores) {
                 </div>
                 <div class="store-actions">
                     <button class="btn btn-primary btn-sm" onclick="triggerSync(${store.id})">Sync Now</button>
+                    <button class="btn btn-danger btn-sm" onclick="cancelSync(${store.id})" style="display:none" id="cancel-btn-${store.id}">Cancel Sync</button>
                     ${sched.running
                         ? `<button class="btn btn-outline btn-sm" onclick="stopScheduler(${store.id})">Stop Scheduler</button>`
                         : `<button class="btn btn-outline btn-sm" onclick="startScheduler(${store.id})">Start Scheduler</button>`
@@ -125,6 +129,32 @@ async function stopScheduler(storeId) {
             loadDashboard();
         } else {
             showAlert(data.error || 'Failed to stop scheduler', 'error');
+        }
+    } catch (err) {
+        showAlert('Error: ' + err.message, 'error');
+    }
+}
+
+function updateCancelButtons(runs, stores) {
+    const runningStoreIds = new Set(runs.map(r => r.store_id));
+    for (const store of stores) {
+        const btn = document.getElementById(`cancel-btn-${store.id}`);
+        if (btn) {
+            btn.style.display = runningStoreIds.has(store.id) ? '' : 'none';
+        }
+    }
+}
+
+async function cancelSync(storeId) {
+    try {
+        const res = await fetch(`/api/sync/${storeId}/cancel`, { method: 'POST' });
+        const data = await res.json();
+        if (res.ok) {
+            const count = data.cancelled || 0;
+            showAlert(`Cancelled ${count} stuck sync(s)`, 'success');
+            loadDashboard();
+        } else {
+            showAlert(data.error || 'Failed to cancel sync', 'error');
         }
     } catch (err) {
         showAlert('Error: ' + err.message, 'error');

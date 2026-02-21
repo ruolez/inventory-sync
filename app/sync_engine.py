@@ -62,11 +62,11 @@ def run_sync(store_id, pg):
 
         shopify = ShopifyClient(store["store_url"], store["admin_access_token"])
 
-        logger.info("=== Phase 1: Fetching Shopify variants ===")
+        logger.info("=== Phase 1: Fetching Shopify variants at location %s ===", location_id)
         phase_start = time.time()
-        variants = shopify.get_all_variants()
+        variants = shopify.get_all_variants(location_id)
         logger.info(
-            "Found %d variants with barcodes in Shopify (%.1fs)",
+            "Found %d variants with barcodes at location (%.1fs)",
             len(variants),
             time.time() - phase_start,
         )
