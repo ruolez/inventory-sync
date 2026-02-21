@@ -16,7 +16,21 @@ def run_sync(store_id, pg):
     if pg.has_running_sync(store_id):
         raise ValueError(f"Sync already running for store {store_id}")
 
-    sync_run = pg.create_sync_run(store_id)
+    s2s_config = pg.get_sql_config("s2s")
+    if not s2s_config:
+        raise ValueError("S2S SQL config not configured")
+
+    s2s_time_conn = MSSQLManager(
+        s2s_config["host"],
+        s2s_config["port"],
+        s2s_config["database_name"],
+        s2s_config["username"],
+        s2s_config["password"],
+    )
+    sql_server_start = s2s_time_conn.get_server_time()
+    logger.info("SQL Server time at sync start: %s", sql_server_start)
+
+    sync_run = pg.create_sync_run(store_id, started_at=sql_server_start)
     run_id = sync_run["id"]
     start_time = time.time()
 
@@ -31,10 +45,7 @@ def run_sync(store_id, pg):
     product_logs = []
 
     try:
-        s2s_config = pg.get_sql_config("s2s")
         admin_config = pg.get_sql_config("db_admin")
-        if not s2s_config:
-            raise ValueError("S2S SQL config not configured")
         if not admin_config:
             raise ValueError("DB_ADMIN SQL config not configured")
 
@@ -123,6 +134,7 @@ def run_sync(store_id, pg):
                 "in_progress_quantity": inv_data["in_progress"],
                 "action": "skip",
                 "error_message": None,
+                "created_at": sql_server_start,
             }
 
             try:
@@ -166,11 +178,12 @@ def run_sync(store_id, pg):
             pg.create_product_logs_batch(product_logs)
 
         duration = time.time() - start_time
+        sql_server_end = s2s_time_conn.get_server_time()
         status = "success" if counters["errors_count"] == 0 else "partial"
         pg.update_sync_run(
             run_id,
             {
-                "finished_at": datetime.now(timezone.utc).isoformat(),
+                "finished_at": sql_server_end,
                 "status": status,
                 "duration_seconds": round(duration, 2),
                 **counters,
@@ -178,7 +191,7 @@ def run_sync(store_id, pg):
         )
         pg.update_store(
             store_id,
-            {"last_sync_at": datetime.now(timezone.utc).isoformat()},
+            {"last_sync_at": sql_server_end},
         )
 
         logger.info(
@@ -204,10 +217,15 @@ def run_sync(store_id, pg):
         if product_logs:
             pg.create_product_logs_batch(product_logs)
 
+        try:
+            sql_server_end = s2s_time_conn.get_server_time()
+        except Exception:
+            sql_server_end = datetime.now(timezone.utc)
+
         pg.update_sync_run(
             run_id,
             {
-                "finished_at": datetime.now(timezone.utc).isoformat(),
+                "finished_at": sql_server_end,
                 "status": "failed",
                 "error_message": str(e),
                 "duration_seconds": round(duration, 2),

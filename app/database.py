@@ -267,13 +267,19 @@ class PostgresManager:
 
     # --- Sync Runs ---
 
-    def create_sync_run(self, store_id):
+    def create_sync_run(self, store_id, started_at=None):
         with self.get_conn() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                cur.execute(
-                    "INSERT INTO sync_runs (store_id) VALUES (%s) RETURNING *",
-                    (store_id,),
-                )
+                if started_at:
+                    cur.execute(
+                        "INSERT INTO sync_runs (store_id, started_at) VALUES (%s, %s) RETURNING *",
+                        (store_id, started_at),
+                    )
+                else:
+                    cur.execute(
+                        "INSERT INTO sync_runs (store_id) VALUES (%s) RETURNING *",
+                        (store_id,),
+                    )
                 row = cur.fetchone()
             conn.commit()
             return dict(row)
@@ -410,11 +416,11 @@ class PostgresManager:
                     "INSERT INTO product_logs (sync_run_id, store_id, product_upc, "
                     "product_description, shopify_variant_id, shopify_product_id, "
                     "old_quantity, new_quantity, quantity_on_hand, pending_po_quantity, "
-                    "in_progress_quantity, action, error_message) "
+                    "in_progress_quantity, action, error_message, created_at) "
                     "VALUES (%(sync_run_id)s,%(store_id)s,%(product_upc)s,"
                     "%(product_description)s,%(shopify_variant_id)s,%(shopify_product_id)s,"
                     "%(old_quantity)s,%(new_quantity)s,%(quantity_on_hand)s,%(pending_po_quantity)s,"
-                    "%(in_progress_quantity)s,%(action)s,%(error_message)s)",
+                    "%(in_progress_quantity)s,%(action)s,%(error_message)s,%(created_at)s)",
                     logs,
                 )
             conn.commit()
@@ -509,6 +515,15 @@ class MSSQLManager:
         cursor.close()
         conn.close()
         return True
+
+    def get_server_time(self):
+        conn = self.get_conn()
+        cursor = conn.cursor()
+        cursor.execute("SELECT GETUTCDATE()")
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        return row[0]
 
     def get_on_hand_quantities(self):
         conn = self.get_conn()
