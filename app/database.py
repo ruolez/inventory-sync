@@ -66,7 +66,7 @@ CREATE TABLE IF NOT EXISTS product_logs (
     id SERIAL PRIMARY KEY,
     sync_run_id INTEGER REFERENCES sync_runs(id) ON DELETE CASCADE,
     store_id INTEGER REFERENCES stores(id) ON DELETE CASCADE,
-    product_upc VARCHAR(20) NOT NULL,
+    product_upc VARCHAR(50) NOT NULL,
     product_description VARCHAR(255),
     shopify_variant_id VARCHAR(255),
     shopify_product_id VARCHAR(255),
