@@ -127,7 +127,7 @@ def run_sync(store_id, pg):
             log_entry = {
                 "sync_run_id": run_id,
                 "store_id": store_id,
-                "product_upc": upc,
+                "product_upc": upc[:50],
                 "product_description": variant.get("product_title"),
                 "shopify_variant_id": variant["variant_id"],
                 "shopify_product_id": variant["product_id"],
