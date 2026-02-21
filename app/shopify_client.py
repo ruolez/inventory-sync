@@ -113,6 +113,67 @@ class ShopifyClient:
                 return pub
         return pubs[0] if pubs else None
 
+    def get_all_variants(self):
+        query = """
+        query($cursor: String) {
+          productVariants(first: 250, after: $cursor) {
+            edges {
+              node {
+                id
+                barcode
+                inventoryQuantity
+                inventoryItem {
+                  id
+                }
+                product {
+                  id
+                  title
+                }
+              }
+            }
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
+          }
+        }
+        """
+        results = {}
+        cursor = None
+        total_fetched = 0
+
+        while True:
+            variables = {"cursor": cursor} if cursor else {}
+            data = self._request(query, variables)
+            variants_data = data.get("productVariants", {})
+            edges = variants_data.get("edges", [])
+            total_fetched += len(edges)
+
+            for edge in edges:
+                node = edge["node"]
+                barcode = node.get("barcode")
+                if barcode:
+                    results[barcode] = {
+                        "variant_id": node["id"],
+                        "inventory_quantity": node.get("inventoryQuantity", 0),
+                        "inventory_item_id": node["inventoryItem"]["id"],
+                        "product_id": node["product"]["id"],
+                        "product_title": node["product"]["title"],
+                    }
+
+            logger.info(
+                "Fetched %d variants so far (%d with barcodes)...",
+                total_fetched,
+                len(results),
+            )
+
+            page_info = variants_data.get("pageInfo", {})
+            if not page_info.get("hasNextPage"):
+                break
+            cursor = page_info.get("endCursor")
+
+        return results
+
     def get_variants_by_barcodes(self, barcodes):
         if not barcodes:
             return {}
@@ -174,6 +235,7 @@ class ShopifyClient:
             "input": {
                 "name": "available",
                 "reason": "correction",
+                "ignoreCompareQuantity": True,
                 "quantities": [
                     {
                         "inventoryItemId": inventory_item_id,

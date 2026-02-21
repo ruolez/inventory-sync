@@ -60,20 +60,34 @@ def run_sync(store_id, pg):
             admin_config["password"],
         )
 
-        logger.info("Fetching on-hand quantities from S2S...")
+        shopify = ShopifyClient(store["store_url"], store["admin_access_token"])
+
+        logger.info("=== Phase 1: Fetching Shopify variants ===")
+        phase_start = time.time()
+        variants = shopify.get_all_variants()
+        logger.info(
+            "Found %d variants with barcodes in Shopify (%.1fs)",
+            len(variants),
+            time.time() - phase_start,
+        )
+
+        logger.info("=== Phase 2: Fetching SQL Server data ===")
+        phase_start = time.time()
         on_hand = s2s.get_on_hand_quantities()
+        logger.info("S2S on-hand: %d UPCs (%.1fs)", len(on_hand), time.time() - phase_start)
 
-        logger.info("Fetching pending PO quantities from S2S...")
+        phase_start = time.time()
         pending_po = s2s.get_pending_po_quantities()
+        logger.info("S2S pending PO: %d UPCs (%.1fs)", len(pending_po), time.time() - phase_start)
 
-        logger.info("Fetching in-progress quantities from DB_ADMIN...")
+        phase_start = time.time()
         in_progress = db_admin.get_in_progress_quantities()
+        logger.info("DB_ADMIN in-progress: %d UPCs (%.1fs)", len(in_progress), time.time() - phase_start)
 
-        all_upcs = set(on_hand.keys()) | set(pending_po.keys()) | set(in_progress.keys())
-        logger.info("Total unique UPCs: %d", len(all_upcs))
-
+        logger.info("=== Phase 3: Calculating inventory ===")
+        shopify_barcodes = set(variants.keys())
         inventory = {}
-        for upc in all_upcs:
+        for upc in shopify_barcodes:
             oh = on_hand.get(upc, 0)
             po = pending_po.get(upc, 0)
             ip = in_progress.get(upc, 0)
@@ -84,21 +98,14 @@ def run_sync(store_id, pg):
                 "pending_po": po,
                 "in_progress": ip,
             }
+        logger.info("Matched %d Shopify barcodes against SQL data", len(inventory))
 
         counters["total_products"] = len(inventory)
 
-        shopify = ShopifyClient(store["store_url"], store["admin_access_token"])
-
-        upc_list = list(inventory.keys())
-        logger.info("Querying Shopify for %d barcodes...", len(upc_list))
-        variants = shopify.get_variants_by_barcodes(upc_list)
-        logger.info("Matched %d variants in Shopify", len(variants))
-
+        logger.info("=== Phase 4: Updating Shopify inventory ===")
+        processed = 0
         for upc, inv_data in inventory.items():
-            variant = variants.get(upc)
-            if not variant:
-                counters["products_skipped"] += 1
-                continue
+            variant = variants[upc]
 
             new_qty = inv_data["final"]
             old_qty = variant["inventory_quantity"]
@@ -151,6 +158,10 @@ def run_sync(store_id, pg):
 
             product_logs.append(log_entry)
 
+            processed += 1
+            if processed % 500 == 0:
+                logger.info("Processing %d/%d products...", processed, len(inventory))
+
         if product_logs:
             pg.create_product_logs_batch(product_logs)
 
@@ -171,11 +182,11 @@ def run_sync(store_id, pg):
         )
 
         logger.info(
-            "Sync completed for store %s: %d updated, %d published, %d unpublished, %d errors in %.1fs",
-            store["store_name"],
+            "Sync completed: %d updated, %d published, %d unpublished, %d skipped, %d errors (%.1fs)",
             counters["products_updated"],
             counters["products_published"],
             counters["products_unpublished"],
+            counters["products_skipped"],
             counters["errors_count"],
             duration,
         )
