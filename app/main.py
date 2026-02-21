@@ -404,5 +404,10 @@ def analytics_errors():
 
 if __name__ == "__main__":
     pg.init_tables()
+    for store in pg.get_stores():
+        if store.get("sync_enabled"):
+            interval = store.get("sync_interval_hours", 6)
+            scheduler.start_scheduler(store["id"], interval, pg)
+            logger.info("Restored scheduler for store %s (%s)", store["id"], store["store_name"])
     logger.info("Starting Inventory Sync on port 5000")
     app.run(host="0.0.0.0", port=5000, debug=False)
