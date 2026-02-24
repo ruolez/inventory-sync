@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS sync_runs (
     products_updated INTEGER DEFAULT 0,
     products_published INTEGER DEFAULT 0,
     products_unpublished INTEGER DEFAULT 0,
+    products_skip_unpublish INTEGER DEFAULT 0,
     products_skipped INTEGER DEFAULT 0,
     errors_count INTEGER DEFAULT 0,
     error_message TEXT,
@@ -101,6 +102,9 @@ class PostgresManager:
                 cur.execute(SCHEMA_SQL)
                 cur.execute(
                     "ALTER TABLE product_logs ALTER COLUMN product_upc TYPE VARCHAR(50)"
+                )
+                cur.execute(
+                    "ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS products_skip_unpublish INTEGER DEFAULT 0"
                 )
             conn.commit()
         logger.info("PostgreSQL tables initialized")
@@ -300,6 +304,7 @@ class PostgresManager:
             "products_updated",
             "products_published",
             "products_unpublished",
+            "products_skip_unpublish",
             "products_skipped",
             "errors_count",
             "error_message",
