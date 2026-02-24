@@ -172,6 +172,65 @@ def run_sync(store_id, pg):
         )
         pg.update_sync_run(run_id, counters)
 
+        zero_stock_items = {}
+        for upc, inv_data in inventory.items():
+            if inv_data["final"] <= 0:
+                variant = variants[upc]
+                zero_stock_items[variant["inventory_item_id"]] = upc
+
+        if zero_stock_items:
+            logger.info(
+                "=== Phase 4B2: Checking other-location stock for %d zero-stock items ===",
+                len(zero_stock_items),
+            )
+            other_stock = shopify.get_inventory_levels_for_items(
+                list(zero_stock_items.keys()), location_id
+            )
+
+            items_to_update_by_iid = {item["inventory_item_id"]: item for item in items_to_update}
+            override_count = 0
+
+            for item_id, upc in zero_stock_items.items():
+                max_qty = other_stock.get(item_id, 0)
+                if max_qty <= 0:
+                    continue
+
+                variant = variants[upc]
+                log_entry = log_entries_map[upc]
+                log_entry["new_quantity"] = max_qty
+                log_entry["action"] = "inventory_override"
+                override_count += 1
+                counters["products_skip_unpublish"] += 1
+
+                if item_id in items_to_update_by_iid:
+                    items_to_update_by_iid[item_id]["quantity"] = max_qty
+                else:
+                    items_to_update.append({
+                        "inventory_item_id": item_id,
+                        "quantity": max_qty,
+                        "upc": upc,
+                    })
+                    counters["products_skipped"] -= 1
+                    counters["products_updated"] += 1
+
+                if publication_id:
+                    product_id = variant["product_id"]
+                    if product_id in products_to_unpublish:
+                        products_to_unpublish.pop(product_id)
+                    if not variant.get("is_published", False) and product_id not in products_to_publish:
+                        products_to_publish[product_id] = upc
+
+                logger.info(
+                    "Override: UPC %s inventory_item %s set to %d (from other location)",
+                    upc, item_id, max_qty,
+                )
+
+            logger.info(
+                "Phase 4B2 result: %d overrides out of %d zero-stock items",
+                override_count, len(zero_stock_items),
+            )
+            pg.update_sync_run(run_id, counters)
+
         logger.info("=== Phase 4B: Batch inventory updates (%d items) ===", len(items_to_update))
         batch_size = 250
         for i in range(0, len(items_to_update), batch_size):
@@ -202,59 +261,6 @@ def run_sync(store_id, pg):
                     "Inventory updates: %d/%d batched...",
                     min(i + batch_size, len(items_to_update)),
                     len(items_to_update),
-                )
-
-        if publication_id:
-            unpublish_product_items = {}
-            if products_to_unpublish:
-                for upc, variant in variants.items():
-                    pid = variant["product_id"]
-                    if pid in products_to_unpublish:
-                        unpublish_product_items.setdefault(pid, []).append(variant["inventory_item_id"])
-
-            republish_candidates = {}
-            republish_product_items = {}
-            for upc, inv_data in inventory.items():
-                variant = variants[upc]
-                pid = variant["product_id"]
-                if inv_data["final"] <= 0 and not variant.get("is_published", False) and pid not in products_to_publish:
-                    if pid not in republish_candidates:
-                        republish_candidates[pid] = upc
-                    republish_product_items.setdefault(pid, []).append(variant["inventory_item_id"])
-
-            all_item_ids = [iid for ids in unpublish_product_items.values() for iid in ids]
-            all_item_ids.extend(iid for ids in republish_product_items.values() for iid in ids)
-
-            if all_item_ids:
-                logger.info(
-                    "=== Phase 4B2: Checking other-location stock (%d unpublish, %d republish candidates) ===",
-                    len(unpublish_product_items),
-                    len(republish_candidates),
-                )
-                other_stock = shopify.get_inventory_levels_for_items(all_item_ids, location_id)
-
-                skip_count = 0
-                for product_id, item_ids in unpublish_product_items.items():
-                    if any(other_stock.get(iid, 0) > 0 for iid in item_ids):
-                        upc = products_to_unpublish.pop(product_id)
-                        log_entries_map[upc]["action"] = "skip_unpublish"
-                        counters["products_skip_unpublish"] += 1
-                        skip_count += 1
-                        logger.info("Skip unpublish: product %s (UPC %s) has stock at other locations", product_id, upc)
-
-                republish_count = 0
-                for product_id, item_ids in republish_product_items.items():
-                    if any(other_stock.get(iid, 0) > 0 for iid in item_ids):
-                        upc = republish_candidates[product_id]
-                        products_to_publish[product_id] = upc
-                        republish_count += 1
-                        logger.info("Republish: product %s (UPC %s) has stock at other locations", product_id, upc)
-
-                logger.info(
-                    "Phase 4B2 result: %d skip unpublish, %d to republish, %d remaining to unpublish",
-                    skip_count,
-                    republish_count,
-                    len(products_to_unpublish),
                 )
 
         if publication_id:
@@ -311,7 +317,7 @@ def run_sync(store_id, pg):
         )
 
         logger.info(
-            "Sync completed: %d updated, %d published, %d unpublished, %d skip_unpublish, %d skipped, %d errors (%.1fs)",
+            "Sync completed: %d updated, %d published, %d unpublished, %d overrides, %d skipped, %d errors (%.1fs)",
             counters["products_updated"],
             counters["products_published"],
             counters["products_unpublished"],

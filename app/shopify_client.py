@@ -446,7 +446,7 @@ class ShopifyClient:
                 item_id = node.get("id")
                 if not item_id:
                     continue
-                total_other = 0
+                max_other = 0
                 for edge in node.get("inventoryLevels", {}).get("edges", []):
                     level = edge["node"]
                     loc_id = level.get("location", {}).get("id")
@@ -454,7 +454,7 @@ class ShopifyClient:
                         continue
                     quantities = level.get("quantities", [])
                     qty = quantities[0]["quantity"] if quantities else 0
-                    if qty > 0:
-                        total_other += qty
-                result[item_id] = total_other
+                    if qty > max_other:
+                        max_other = qty
+                result[item_id] = max_other
         return result

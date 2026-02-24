@@ -223,6 +223,7 @@ function renderActionDistribution(data) {
     }
     const colorMap = {
         inventory_update: c.info,
+        inventory_override: c.info,
         skip: c.textTertiary,
         republish: c.success,
         unpublish: c.warning,
