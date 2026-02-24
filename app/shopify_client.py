@@ -414,3 +414,47 @@ class ShopifyClient:
             error_msgs = [e.get("message", str(e)) for e in errors]
             raise Exception(f"Unpublish errors: {'; '.join(error_msgs)}")
         return True
+
+    def get_inventory_levels_for_items(self, inventory_item_ids, exclude_location_id):
+        query = """
+        query($ids: [ID!]!) {
+          nodes(ids: $ids) {
+            ... on InventoryItem {
+              id
+              inventoryLevels(first: 50) {
+                edges {
+                  node {
+                    location { id }
+                    quantities(names: ["available"]) {
+                      quantity
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+        """
+        result = {}
+        batch_size = 100
+        for i in range(0, len(inventory_item_ids), batch_size):
+            batch = inventory_item_ids[i : i + batch_size]
+            data = self._request(query, {"ids": batch})
+            for node in data.get("nodes", []):
+                if not node:
+                    continue
+                item_id = node.get("id")
+                if not item_id:
+                    continue
+                total_other = 0
+                for edge in node.get("inventoryLevels", {}).get("edges", []):
+                    level = edge["node"]
+                    loc_id = level.get("location", {}).get("id")
+                    if loc_id == exclude_location_id:
+                        continue
+                    quantities = level.get("quantities", [])
+                    qty = quantities[0]["quantity"] if quantities else 0
+                    if qty > 0:
+                        total_other += qty
+                result[item_id] = total_other
+        return result

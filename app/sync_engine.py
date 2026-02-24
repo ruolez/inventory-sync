@@ -39,6 +39,7 @@ def run_sync(store_id, pg):
         "products_updated": 0,
         "products_published": 0,
         "products_unpublished": 0,
+        "products_skip_unpublish": 0,
         "products_skipped": 0,
         "errors_count": 0,
     }
@@ -204,6 +205,59 @@ def run_sync(store_id, pg):
                 )
 
         if publication_id:
+            unpublish_product_items = {}
+            if products_to_unpublish:
+                for upc, variant in variants.items():
+                    pid = variant["product_id"]
+                    if pid in products_to_unpublish:
+                        unpublish_product_items.setdefault(pid, []).append(variant["inventory_item_id"])
+
+            republish_candidates = {}
+            republish_product_items = {}
+            for upc, inv_data in inventory.items():
+                variant = variants[upc]
+                pid = variant["product_id"]
+                if inv_data["final"] <= 0 and not variant.get("is_published", False) and pid not in products_to_publish:
+                    if pid not in republish_candidates:
+                        republish_candidates[pid] = upc
+                    republish_product_items.setdefault(pid, []).append(variant["inventory_item_id"])
+
+            all_item_ids = [iid for ids in unpublish_product_items.values() for iid in ids]
+            all_item_ids.extend(iid for ids in republish_product_items.values() for iid in ids)
+
+            if all_item_ids:
+                logger.info(
+                    "=== Phase 4B2: Checking other-location stock (%d unpublish, %d republish candidates) ===",
+                    len(unpublish_product_items),
+                    len(republish_candidates),
+                )
+                other_stock = shopify.get_inventory_levels_for_items(all_item_ids, location_id)
+
+                skip_count = 0
+                for product_id, item_ids in unpublish_product_items.items():
+                    if any(other_stock.get(iid, 0) > 0 for iid in item_ids):
+                        upc = products_to_unpublish.pop(product_id)
+                        log_entries_map[upc]["action"] = "skip_unpublish"
+                        counters["products_skip_unpublish"] += 1
+                        skip_count += 1
+                        logger.info("Skip unpublish: product %s (UPC %s) has stock at other locations", product_id, upc)
+
+                republish_count = 0
+                for product_id, item_ids in republish_product_items.items():
+                    if any(other_stock.get(iid, 0) > 0 for iid in item_ids):
+                        upc = republish_candidates[product_id]
+                        products_to_publish[product_id] = upc
+                        republish_count += 1
+                        logger.info("Republish: product %s (UPC %s) has stock at other locations", product_id, upc)
+
+                logger.info(
+                    "Phase 4B2 result: %d skip unpublish, %d to republish, %d remaining to unpublish",
+                    skip_count,
+                    republish_count,
+                    len(products_to_unpublish),
+                )
+
+        if publication_id:
             logger.info(
                 "=== Phase 4C: Publish/unpublish (%d publish, %d unpublish) ===",
                 len(products_to_publish),
@@ -257,10 +311,11 @@ def run_sync(store_id, pg):
         )
 
         logger.info(
-            "Sync completed: %d updated, %d published, %d unpublished, %d skipped, %d errors (%.1fs)",
+            "Sync completed: %d updated, %d published, %d unpublished, %d skip_unpublish, %d skipped, %d errors (%.1fs)",
             counters["products_updated"],
             counters["products_published"],
             counters["products_unpublished"],
+            counters["products_skip_unpublish"],
             counters["products_skipped"],
             counters["errors_count"],
             duration,
