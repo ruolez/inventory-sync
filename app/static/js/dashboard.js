@@ -87,13 +87,13 @@ function renderStoreCards(stores) {
 function renderRecentRuns(runs) {
     const tbody = document.getElementById('recent-runs');
     if (!runs.length) {
-        tbody.innerHTML = '<tr><td colspan="9" class="empty-state">No sync runs yet</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No sync runs yet</td></tr>';
         return;
     }
 
     tbody.innerHTML = runs.map(run => {
         const isRunning = run.status === 'running';
-        const processed = run.products_updated + run.products_published + run.products_unpublished + (run.products_skip_unpublish || 0) + run.products_skipped + run.errors_count;
+        const processed = run.products_updated + run.products_published + run.products_skipped + run.errors_count;
         const total = run.total_products || 0;
         const statusCell = isRunning && total > 0
             ? `<span class="badge badge-info"><span class="pulse-dot"></span>${processed}/${total}</span>`
@@ -116,8 +116,6 @@ function renderRecentRuns(runs) {
             <td>${statusCell}</td>
             <td>${run.products_updated}</td>
             <td>${run.products_published}</td>
-            <td>${run.products_unpublished}</td>
-            <td>${run.products_skip_unpublish || 0}</td>
             <td>${run.errors_count > 0 ? `<span style="color: var(--error);">${run.errors_count}</span>` : '0'}</td>
             <td>${durationCell}</td>
         </tr>`;

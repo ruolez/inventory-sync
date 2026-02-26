@@ -103,7 +103,7 @@ def run_sync(store_id, pg):
             oh = on_hand.get(upc, 0)
             po = pending_po.get(upc, 0)
             ip = in_progress.get(upc, 0)
-            final = int(oh + po - ip)
+            final = max(0, int(oh + po - ip))
             inventory[upc] = {
                 "final": final,
                 "on_hand": oh,
@@ -119,7 +119,6 @@ def run_sync(store_id, pg):
         log_entries_map = {}
         items_to_update = []
         products_to_publish = {}
-        products_to_unpublish = {}
 
         for upc, inv_data in inventory.items():
             variant = variants[upc]
@@ -157,17 +156,13 @@ def run_sync(store_id, pg):
                     is_published = variant.get("is_published", False)
                     if new_qty > 0 and not is_published:
                         products_to_publish[product_id] = upc
-                    elif new_qty <= 0 and is_published:
-                        if product_id not in products_to_publish:
-                            products_to_unpublish[product_id] = upc
             else:
                 counters["products_skipped"] += 1
 
         logger.info(
-            "Classification: %d to update, %d to publish, %d to unpublish, %d skipped",
+            "Classification: %d to update, %d to publish, %d skipped",
             len(items_to_update),
             len(products_to_publish),
-            len(products_to_unpublish),
             counters["products_skipped"],
         )
         pg.update_sync_run(run_id, counters)
@@ -215,8 +210,6 @@ def run_sync(store_id, pg):
 
                 if publication_id:
                     product_id = variant["product_id"]
-                    if product_id in products_to_unpublish:
-                        products_to_unpublish.pop(product_id)
                     if not variant.get("is_published", False) and product_id not in products_to_publish:
                         products_to_publish[product_id] = upc
 
@@ -265,9 +258,8 @@ def run_sync(store_id, pg):
 
         if publication_id:
             logger.info(
-                "=== Phase 4C: Publish/unpublish (%d publish, %d unpublish) ===",
+                "=== Phase 4C: Publish (%d products) ===",
                 len(products_to_publish),
-                len(products_to_unpublish),
             )
             for product_id, upc in products_to_publish.items():
                 try:
@@ -276,17 +268,6 @@ def run_sync(store_id, pg):
                     counters["products_published"] += 1
                 except Exception as e:
                     logger.error("Error publishing product %s (UPC %s): %s", product_id, upc, str(e))
-                    log_entries_map[upc]["action"] = "error"
-                    log_entries_map[upc]["error_message"] = str(e)
-                    counters["errors_count"] += 1
-
-            for product_id, upc in products_to_unpublish.items():
-                try:
-                    shopify.unpublish_product(product_id, publication_id)
-                    log_entries_map[upc]["action"] = "unpublish"
-                    counters["products_unpublished"] += 1
-                except Exception as e:
-                    logger.error("Error unpublishing product %s (UPC %s): %s", product_id, upc, str(e))
                     log_entries_map[upc]["action"] = "error"
                     log_entries_map[upc]["error_message"] = str(e)
                     counters["errors_count"] += 1
@@ -317,10 +298,9 @@ def run_sync(store_id, pg):
         )
 
         logger.info(
-            "Sync completed: %d updated, %d published, %d unpublished, %d overrides, %d skipped, %d errors (%.1fs)",
+            "Sync completed: %d updated, %d published, %d overrides, %d skipped, %d errors (%.1fs)",
             counters["products_updated"],
             counters["products_published"],
-            counters["products_unpublished"],
             counters["products_skip_unpublish"],
             counters["products_skipped"],
             counters["errors_count"],

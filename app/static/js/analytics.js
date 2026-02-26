@@ -137,7 +137,6 @@ function renderKPIs(data) {
     animateValue(document.getElementById('kpi-total-syncs'), data.total_syncs);
     animateValue(document.getElementById('kpi-updated'), data.products_updated);
     animateValue(document.getElementById('kpi-published'), data.products_published);
-    animateValue(document.getElementById('kpi-unpublished'), data.products_unpublished);
 
     const errorRateEl = document.getElementById('kpi-error-rate');
     errorRateEl.textContent = data.error_rate + '%';

@@ -45,7 +45,7 @@ async function loadHistory() {
 function renderHistory(runs) {
     const tbody = document.getElementById('history-body');
     if (!runs.length) {
-        tbody.innerHTML = '<tr><td colspan="13" class="empty-state">No sync runs found</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="11" class="empty-state">No sync runs found</td></tr>';
         return;
     }
 
@@ -58,8 +58,6 @@ function renderHistory(runs) {
             <td>${run.total_products}</td>
             <td>${run.products_updated}</td>
             <td>${run.products_published}</td>
-            <td>${run.products_unpublished}</td>
-            <td>${run.products_skip_unpublish || 0}</td>
             <td>${run.products_skipped}</td>
             <td>${run.errors_count > 0 ? `<span style="color: var(--error);">${run.errors_count}</span>` : '0'}</td>
             <td>${run.duration_seconds ? run.duration_seconds.toFixed(1) + 's' : '-'}</td>
