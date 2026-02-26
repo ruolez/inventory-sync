@@ -131,6 +131,7 @@ class ShopifyClient:
                       product {
                         id
                         title
+                        status
                       }
                     }
                   }
@@ -161,6 +162,7 @@ class ShopifyClient:
                       product {
                         id
                         title
+                        status
                         publishedOnPublication(publicationId: $publicationId)
                       }
                     }
@@ -200,6 +202,9 @@ class ShopifyClient:
                     continue
                 barcode = variant.get("barcode")
                 if barcode:
+                    product_status = variant["product"].get("status")
+                    if product_status != "ACTIVE":
+                        continue
                     quantities = node.get("quantities", [])
                     available = quantities[0]["quantity"] if quantities else 0
                     result_entry = {
