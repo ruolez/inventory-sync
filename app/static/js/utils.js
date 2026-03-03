@@ -29,6 +29,7 @@ function actionBadge(action) {
     const map = {
         inventory_update: 'badge-info',
         inventory_override: 'badge-info',
+        discontinued: 'badge-warning',
         unpublish: 'badge-warning',
         republish: 'badge-success',
         skip: 'badge-neutral',

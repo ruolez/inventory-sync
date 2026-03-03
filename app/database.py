@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS sync_runs (
     products_published INTEGER DEFAULT 0,
     products_unpublished INTEGER DEFAULT 0,
     products_skip_unpublish INTEGER DEFAULT 0,
+    products_discontinued INTEGER DEFAULT 0,
     products_skipped INTEGER DEFAULT 0,
     errors_count INTEGER DEFAULT 0,
     error_message TEXT,
@@ -105,6 +106,9 @@ class PostgresManager:
                 )
                 cur.execute(
                     "ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS products_skip_unpublish INTEGER DEFAULT 0"
+                )
+                cur.execute(
+                    "ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS products_discontinued INTEGER DEFAULT 0"
                 )
             conn.commit()
         logger.info("PostgreSQL tables initialized")
@@ -305,6 +309,7 @@ class PostgresManager:
             "products_published",
             "products_unpublished",
             "products_skip_unpublish",
+            "products_discontinued",
             "products_skipped",
             "errors_count",
             "error_message",
@@ -742,3 +747,17 @@ class MSSQLManager:
         cursor.close()
         conn.close()
         return {row["ProductUPC"]: int(row["InProgressQty"]) for row in rows}
+
+    def get_discontinued_barcodes(self):
+        conn = self.get_conn()
+        cursor = conn.cursor(as_dict=True)
+        cursor.execute(
+            "SELECT ProductUPC "
+            "FROM Items_tbl "
+            "WHERE ProductUPC IS NOT NULL AND ProductUPC != '' "
+            "AND Discontinued = 1"
+        )
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        return {row["ProductUPC"] for row in rows}

@@ -40,6 +40,7 @@ def run_sync(store_id, pg):
         "products_published": 0,
         "products_unpublished": 0,
         "products_skip_unpublish": 0,
+        "products_discontinued": 0,
         "products_skipped": 0,
         "errors_count": 0,
     }
@@ -96,6 +97,10 @@ def run_sync(store_id, pg):
         in_progress = db_admin.get_in_progress_quantities()
         logger.info("DB_ADMIN in-progress: %d UPCs (%.1fs)", len(in_progress), time.time() - phase_start)
 
+        phase_start = time.time()
+        discontinued = s2s.get_discontinued_barcodes()
+        logger.info("S2S discontinued: %d UPCs (%.1fs)", len(discontinued), time.time() - phase_start)
+
         logger.info("=== Phase 3: Calculating inventory ===")
         shopify_barcodes = set(variants.keys())
         inventory = {}
@@ -103,12 +108,14 @@ def run_sync(store_id, pg):
             oh = on_hand.get(upc, 0)
             po = pending_po.get(upc, 0)
             ip = in_progress.get(upc, 0)
-            final = max(0, int(oh + po - ip))
+            is_discontinued = upc in discontinued
+            final = 0 if is_discontinued else max(0, int(oh + po - ip))
             inventory[upc] = {
                 "final": final,
                 "on_hand": oh,
                 "pending_po": po,
                 "in_progress": ip,
+                "discontinued": is_discontinued,
             }
         logger.info("Matched %d Shopify barcodes against SQL data", len(inventory))
 
@@ -142,7 +149,17 @@ def run_sync(store_id, pg):
             }
             log_entries_map[upc] = log_entry
 
-            if new_qty != old_qty:
+            if inv_data["discontinued"]:
+                log_entry["action"] = "discontinued"
+                counters["products_discontinued"] += 1
+                if new_qty != old_qty:
+                    items_to_update.append({
+                        "inventory_item_id": variant["inventory_item_id"],
+                        "quantity": new_qty,
+                        "upc": upc,
+                    })
+                    counters["products_updated"] += 1
+            elif new_qty != old_qty:
                 log_entry["action"] = "inventory_update"
                 counters["products_updated"] += 1
                 items_to_update.append({
@@ -169,7 +186,7 @@ def run_sync(store_id, pg):
 
         zero_stock_items = {}
         for upc, inv_data in inventory.items():
-            if inv_data["final"] <= 0:
+            if inv_data["final"] <= 0 and not inv_data["discontinued"]:
                 variant = variants[upc]
                 zero_stock_items[variant["inventory_item_id"]] = upc
 
@@ -298,9 +315,10 @@ def run_sync(store_id, pg):
         )
 
         logger.info(
-            "Sync completed: %d updated, %d published, %d overrides, %d skipped, %d errors (%.1fs)",
+            "Sync completed: %d updated, %d published, %d discontinued, %d overrides, %d skipped, %d errors (%.1fs)",
             counters["products_updated"],
             counters["products_published"],
+            counters["products_discontinued"],
             counters["products_skip_unpublish"],
             counters["products_skipped"],
             counters["errors_count"],
