@@ -32,6 +32,7 @@ function actionBadge(action) {
         discontinued: 'badge-warning',
         unpublish: 'badge-warning',
         republish: 'badge-success',
+        excluded: 'badge-neutral',
         skip: 'badge-neutral',
         error: 'badge-error',
     };

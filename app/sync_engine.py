@@ -41,10 +41,13 @@ def run_sync(store_id, pg):
         "products_unpublished": 0,
         "products_skip_unpublish": 0,
         "products_discontinued": 0,
+        "products_excluded": 0,
         "products_skipped": 0,
         "errors_count": 0,
     }
     product_logs = []
+    excluded_upcs = pg.get_excluded_upcs_set()
+    excluded_found = set()
 
     try:
         admin_config = pg.get_sql_config("db_admin")
@@ -103,6 +106,13 @@ def run_sync(store_id, pg):
 
         logger.info("=== Phase 3: Calculating inventory ===")
         shopify_barcodes = set(variants.keys())
+
+        excluded_found = shopify_barcodes & excluded_upcs
+        if excluded_found:
+            shopify_barcodes -= excluded_found
+            counters["products_excluded"] = len(excluded_found)
+            logger.info("Excluded %d products from sync", len(excluded_found))
+
         inventory = {}
         for upc in shopify_barcodes:
             oh = on_hand.get(upc, 0)
@@ -292,7 +302,26 @@ def run_sync(store_id, pg):
             pg.update_sync_run(run_id, counters)
 
         logger.info("=== Phase 4D: Finalizing ===")
-        product_logs = list(log_entries_map.values())
+        excluded_log_entries = []
+        for upc in excluded_found:
+            variant = variants[upc]
+            excluded_log_entries.append({
+                "sync_run_id": run_id,
+                "store_id": store_id,
+                "product_upc": upc[:50],
+                "product_description": variant.get("product_title"),
+                "shopify_variant_id": variant["variant_id"],
+                "shopify_product_id": variant["product_id"],
+                "old_quantity": variant["inventory_quantity"],
+                "new_quantity": variant["inventory_quantity"],
+                "quantity_on_hand": None,
+                "pending_po_quantity": None,
+                "in_progress_quantity": None,
+                "action": "excluded",
+                "error_message": None,
+                "created_at": sql_server_start,
+            })
+        product_logs = list(log_entries_map.values()) + excluded_log_entries
 
         if product_logs:
             pg.create_product_logs_batch(product_logs)
@@ -315,10 +344,11 @@ def run_sync(store_id, pg):
         )
 
         logger.info(
-            "Sync completed: %d updated, %d published, %d discontinued, %d overrides, %d skipped, %d errors (%.1fs)",
+            "Sync completed: %d updated, %d published, %d discontinued, %d excluded, %d overrides, %d skipped, %d errors (%.1fs)",
             counters["products_updated"],
             counters["products_published"],
             counters["products_discontinued"],
+            counters["products_excluded"],
             counters["products_skip_unpublish"],
             counters["products_skipped"],
             counters["errors_count"],

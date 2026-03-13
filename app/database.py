@@ -87,6 +87,15 @@ CREATE INDEX IF NOT EXISTS idx_product_logs_run ON product_logs(sync_run_id);
 CREATE INDEX IF NOT EXISTS idx_product_logs_upc ON product_logs(product_upc);
 CREATE INDEX IF NOT EXISTS idx_product_logs_action_created ON product_logs(action, created_at);
 CREATE INDEX IF NOT EXISTS idx_product_logs_store_created ON product_logs(store_id, created_at);
+
+CREATE TABLE IF NOT EXISTS excluded_products (
+    id SERIAL PRIMARY KEY,
+    product_upc VARCHAR(50) UNIQUE NOT NULL,
+    product_description VARCHAR(255),
+    reason VARCHAR(255),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_excluded_products_upc ON excluded_products(product_upc);
 """
 
 
@@ -109,6 +118,9 @@ class PostgresManager:
                 )
                 cur.execute(
                     "ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS products_discontinued INTEGER DEFAULT 0"
+                )
+                cur.execute(
+                    "ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS products_excluded INTEGER DEFAULT 0"
                 )
             conn.commit()
         logger.info("PostgreSQL tables initialized")
@@ -310,6 +322,7 @@ class PostgresManager:
             "products_unpublished",
             "products_skip_unpublish",
             "products_discontinued",
+            "products_excluded",
             "products_skipped",
             "errors_count",
             "error_message",
@@ -506,6 +519,40 @@ class PostgresManager:
                     "recent_runs": recent_runs,
                 }
 
+
+    # --- Excluded Products ---
+
+    def get_excluded_products(self):
+        with self.get_conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("SELECT * FROM excluded_products ORDER BY created_at DESC")
+                return [dict(r) for r in cur.fetchall()]
+
+    def add_excluded_product(self, upc, description=None, reason=None):
+        with self.get_conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    "INSERT INTO excluded_products (product_upc, product_description, reason) "
+                    "VALUES (%s, %s, %s) ON CONFLICT (product_upc) DO NOTHING RETURNING *",
+                    (upc, description, reason),
+                )
+                row = cur.fetchone()
+            conn.commit()
+            return dict(row) if row else None
+
+    def delete_excluded_product(self, product_id):
+        with self.get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM excluded_products WHERE id = %s", (product_id,))
+                deleted = cur.rowcount
+            conn.commit()
+            return deleted > 0
+
+    def get_excluded_upcs_set(self):
+        with self.get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT product_upc FROM excluded_products")
+                return {row[0] for row in cur.fetchall()}
 
     # --- Analytics ---
 
@@ -747,6 +794,22 @@ class MSSQLManager:
         cursor.close()
         conn.close()
         return {row["ProductUPC"]: int(row["InProgressQty"]) for row in rows}
+
+    def search_products(self, query, limit=20):
+        conn = self.get_conn()
+        cursor = conn.cursor(as_dict=True)
+        like_query = f"%{query}%"
+        cursor.execute(
+            "SELECT TOP %d ProductUPC, ProductDescription "
+            "FROM Items_tbl "
+            "WHERE (ProductUPC LIKE %s OR ProductDescription LIKE %s) "
+            "AND ProductUPC IS NOT NULL AND ProductUPC != ''",
+            (limit, like_query, like_query),
+        )
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        return [{"upc": row["ProductUPC"], "description": row["ProductDescription"]} for row in rows]
 
     def get_discontinued_barcodes(self):
         conn = self.get_conn()

@@ -80,6 +80,11 @@ def analytics_page():
     return render_template("analytics.html")
 
 
+@app.route("/excluded-products")
+def excluded_products_page():
+    return render_template("excluded-products.html")
+
+
 # --- Health ---
 
 
@@ -243,6 +248,59 @@ def _test_sql_connection(config_key):
         return jsonify({"success": True, "message": "Connection successful"})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 400
+
+
+# --- Excluded Products API ---
+
+
+@app.route("/api/excluded-products", methods=["GET"])
+def get_excluded_products():
+    products = pg.get_excluded_products()
+    return to_json(products)
+
+
+@app.route("/api/excluded-products", methods=["POST"])
+def add_excluded_product():
+    data = request.get_json()
+    if not data or not data.get("product_upc"):
+        return jsonify({"error": "product_upc is required"}), 400
+    result = pg.add_excluded_product(
+        data["product_upc"],
+        data.get("product_description"),
+        data.get("reason"),
+    )
+    if not result:
+        return jsonify({"error": "Product already excluded"}), 409
+    return to_json(result, 201)
+
+
+@app.route("/api/excluded-products/<int:product_id>", methods=["DELETE"])
+def delete_excluded_product(product_id):
+    if pg.delete_excluded_product(product_id):
+        return jsonify({"success": True})
+    return jsonify({"error": "Not found"}), 404
+
+
+@app.route("/api/excluded-products/search", methods=["GET"])
+def search_products_for_exclusion():
+    q = request.args.get("q", "").strip()
+    if len(q) < 2:
+        return jsonify([])
+    s2s_config = pg.get_sql_config("s2s")
+    if not s2s_config:
+        return jsonify({"error": "S2S SQL config not configured"}), 400
+    try:
+        s2s = MSSQLManager(
+            s2s_config["host"],
+            s2s_config["port"],
+            s2s_config["database_name"],
+            s2s_config["username"],
+            s2s_config["password"],
+        )
+        results = s2s.search_products(q)
+        return jsonify(results)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 # --- Sync API ---
