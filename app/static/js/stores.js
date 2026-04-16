@@ -23,6 +23,9 @@ function renderStores(stores) {
             <h3>${escapeHtml(store.store_name)}</h3>
             <div class="store-url">${escapeHtml(store.store_url)}</div>
             <div class="store-meta">
+                <span class="badge ${store.auth_method === 'oauth_client_credentials' ? 'badge-info' : 'badge-neutral'}">
+                    ${store.auth_method === 'oauth_client_credentials' ? 'OAuth' : 'Token'}
+                </span>
                 <span class="badge ${store.sync_enabled ? 'badge-success' : 'badge-neutral'}">
                     ${store.sync_enabled ? 'Sync Enabled' : 'Sync Disabled'}
                 </span>
@@ -36,7 +39,7 @@ function renderStores(stores) {
                 <button class="btn btn-outline btn-sm" onclick="testConnection(${store.id})">Test</button>
                 <button class="btn btn-outline btn-sm" onclick="openLocations(${store.id})">Locations</button>
                 <button class="btn btn-outline btn-sm" onclick="fetchPublication(${store.id})">Publication</button>
-                <button class="btn btn-outline btn-sm" onclick="openEditModal(${store.id}, '${escapeAttr(store.store_name)}', '${escapeAttr(store.store_url)}', ${store.sync_interval_hours})">Edit</button>
+                <button class="btn btn-outline btn-sm" onclick="openEditModal(${store.id}, '${escapeAttr(store.store_name)}', '${escapeAttr(store.store_url)}', ${store.sync_interval_hours}, '${store.auth_method || 'legacy'}')">Edit</button>
                 <button class="btn btn-danger btn-sm" onclick="deleteStore(${store.id}, '${escapeAttr(store.store_name)}')">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3,6 5,6 21,6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
                 </button>
@@ -51,17 +54,25 @@ function openAddModal() {
     document.getElementById('store-name').value = '';
     document.getElementById('store-url').value = '';
     document.getElementById('admin-token').value = '';
+    document.getElementById('oauth-client-id').value = '';
+    document.getElementById('oauth-client-secret').value = '';
+    document.getElementById('auth-method').value = 'legacy';
     document.getElementById('sync-interval').value = '6';
+    toggleAuthFields();
     document.getElementById('store-modal').classList.add('active');
 }
 
-function openEditModal(id, name, url, interval) {
+function openEditModal(id, name, url, interval, authMethod) {
     document.getElementById('modal-title').textContent = 'Edit Store';
     document.getElementById('store-id').value = id;
     document.getElementById('store-name').value = name;
     document.getElementById('store-url').value = url;
     document.getElementById('admin-token').value = '';
+    document.getElementById('oauth-client-id').value = '';
+    document.getElementById('oauth-client-secret').value = '';
+    document.getElementById('auth-method').value = authMethod || 'legacy';
     document.getElementById('sync-interval').value = interval;
+    toggleAuthFields();
     document.getElementById('store-modal').classList.add('active');
 }
 
@@ -69,23 +80,43 @@ function closeModal() {
     document.getElementById('store-modal').classList.remove('active');
 }
 
+function toggleAuthFields() {
+    const method = document.getElementById('auth-method').value;
+    document.getElementById('legacy-auth-fields').style.display = method === 'legacy' ? '' : 'none';
+    document.getElementById('oauth-auth-fields').style.display = method === 'oauth_client_credentials' ? '' : 'none';
+}
+
 async function saveStore() {
     const id = document.getElementById('store-id').value;
+    const authMethod = document.getElementById('auth-method').value;
     const data = {
         store_name: document.getElementById('store-name').value.trim(),
         store_url: document.getElementById('store-url').value.trim(),
         sync_interval_hours: parseInt(document.getElementById('sync-interval').value),
+        auth_method: authMethod,
     };
-    const token = document.getElementById('admin-token').value.trim();
-    if (token) data.admin_access_token = token;
 
     if (!data.store_name || !data.store_url) {
         showToast('Store name and URL are required', 'error');
         return;
     }
-    if (!id && !token) {
-        showToast('Admin access token is required for new stores', 'error');
-        return;
+
+    if (authMethod === 'oauth_client_credentials') {
+        const clientId = document.getElementById('oauth-client-id').value.trim();
+        const clientSecret = document.getElementById('oauth-client-secret').value.trim();
+        if (!id && (!clientId || !clientSecret)) {
+            showToast('Client ID and Client Secret are required for new stores', 'error');
+            return;
+        }
+        if (clientId) data.oauth_client_id = clientId;
+        if (clientSecret) data.oauth_client_secret = clientSecret;
+    } else {
+        const token = document.getElementById('admin-token').value.trim();
+        if (!id && !token) {
+            showToast('Admin access token is required for new stores', 'error');
+            return;
+        }
+        if (token) data.admin_access_token = token;
     }
 
     try {

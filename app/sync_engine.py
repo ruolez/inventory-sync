@@ -3,7 +3,7 @@ import logging
 from datetime import datetime, timezone
 
 from app.database import PostgresManager, MSSQLManager
-from app.shopify_client import ShopifyClient
+from app.shopify_client import ShopifyClient, create_shopify_client
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +76,7 @@ def run_sync(store_id, pg):
             admin_config["password"],
         )
 
-        shopify = ShopifyClient(store["store_url"], store["admin_access_token"])
+        shopify = create_shopify_client(store)
 
         logger.info("=== Phase 1: Fetching Shopify variants at location %s ===", location_id)
         phase_start = time.time()

@@ -122,6 +122,19 @@ class PostgresManager:
                 cur.execute(
                     "ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS products_excluded INTEGER DEFAULT 0"
                 )
+                # OAuth client credentials support
+                cur.execute(
+                    "ALTER TABLE stores ADD COLUMN IF NOT EXISTS auth_method VARCHAR(20) DEFAULT 'legacy'"
+                )
+                cur.execute(
+                    "ALTER TABLE stores ADD COLUMN IF NOT EXISTS oauth_client_id VARCHAR(255)"
+                )
+                cur.execute(
+                    "ALTER TABLE stores ADD COLUMN IF NOT EXISTS oauth_client_secret VARCHAR(255)"
+                )
+                cur.execute(
+                    "ALTER TABLE stores ALTER COLUMN admin_access_token DROP NOT NULL"
+                )
             conn.commit()
         logger.info("PostgreSQL tables initialized")
 
@@ -132,8 +145,8 @@ class PostgresManager:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute(
                     "SELECT id, store_name, store_url, publication_id, "
-                    "sync_enabled, sync_interval_hours, last_sync_at, next_sync_at, "
-                    "created_at, updated_at FROM stores ORDER BY id"
+                    "auth_method, sync_enabled, sync_interval_hours, last_sync_at, "
+                    "next_sync_at, created_at, updated_at FROM stores ORDER BY id"
                 )
                 return [dict(r) for r in cur.fetchall()]
 
@@ -149,11 +162,15 @@ class PostgresManager:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute(
                     "INSERT INTO stores (store_name, store_url, admin_access_token, "
-                    "sync_interval_hours) VALUES (%s, %s, %s, %s) RETURNING *",
+                    "auth_method, oauth_client_id, oauth_client_secret, "
+                    "sync_interval_hours) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING *",
                     (
                         data["store_name"],
                         data["store_url"],
-                        data["admin_access_token"],
+                        data.get("admin_access_token"),
+                        data.get("auth_method", "legacy"),
+                        data.get("oauth_client_id"),
+                        data.get("oauth_client_secret"),
                         data.get("sync_interval_hours", 6),
                     ),
                 )
@@ -168,6 +185,9 @@ class PostgresManager:
             "store_name",
             "store_url",
             "admin_access_token",
+            "auth_method",
+            "oauth_client_id",
+            "oauth_client_secret",
             "publication_id",
             "sync_enabled",
             "sync_interval_hours",

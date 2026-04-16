@@ -115,8 +115,27 @@
                     <input type="text" class="form-control" id="store-url" placeholder="mystore.myshopify.com">
                 </div>
                 <div class="form-group">
-                    <label for="admin-token">Admin Access Token</label>
-                    <input type="password" class="form-control" id="admin-token" placeholder="shpat_xxxxxxxx">
+                    <label for="auth-method">Authentication Method</label>
+                    <select class="form-control" id="auth-method" onchange="toggleAuthFields()">
+                        <option value="legacy">Admin Access Token (Legacy)</option>
+                        <option value="oauth_client_credentials">OAuth Client Credentials (Dev Dashboard)</option>
+                    </select>
+                </div>
+                <div id="legacy-auth-fields">
+                    <div class="form-group">
+                        <label for="admin-token">Admin Access Token</label>
+                        <input type="password" class="form-control" id="admin-token" placeholder="shpat_xxxxxxxx">
+                    </div>
+                </div>
+                <div id="oauth-auth-fields" style="display:none">
+                    <div class="form-group">
+                        <label for="oauth-client-id">Client ID</label>
+                        <input type="text" class="form-control" id="oauth-client-id" placeholder="Client ID from Dev Dashboard">
+                    </div>
+                    <div class="form-group">
+                        <label for="oauth-client-secret">Client Secret</label>
+                        <input type="password" class="form-control" id="oauth-client-secret" placeholder="Client Secret from Dev Dashboard">
+                    </div>
                 </div>
                 <div class="form-group">
                     <label for="sync-interval">Sync Interval (hours)</label>

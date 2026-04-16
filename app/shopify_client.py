@@ -10,15 +10,28 @@ RATE_LIMIT_SLEEP = 1.0
 
 
 class ShopifyClient:
-    def __init__(self, store_url, admin_access_token):
+    def __init__(self, store_url, admin_access_token=None,
+                 oauth_client_id=None, oauth_client_secret=None):
         self.store_url = store_url.rstrip("/")
         if not self.store_url.startswith("https://"):
             self.store_url = f"https://{self.store_url}"
-        self.token = admin_access_token
+        self._static_token = admin_access_token
+        self._oauth_client_id = oauth_client_id
+        self._oauth_client_secret = oauth_client_secret
+        self._auth_method = "oauth" if oauth_client_id else "legacy"
         self.graphql_url = f"{self.store_url}/admin/api/{API_VERSION}/graphql.json"
         self.available_points = 1000
 
-    def _request(self, query, variables=None):
+    @property
+    def token(self):
+        if self._auth_method == "legacy":
+            return self._static_token
+        from app.token_manager import token_manager
+        return token_manager.get_token(
+            self.store_url, self._oauth_client_id, self._oauth_client_secret
+        )
+
+    def _request(self, query, variables=None, _retried=False):
         headers = {
             "X-Shopify-Access-Token": self.token,
             "Content-Type": "application/json",
@@ -36,6 +49,13 @@ class ShopifyClient:
             time.sleep(RATE_LIMIT_SLEEP)
 
         resp = requests.post(self.graphql_url, json=payload, headers=headers, timeout=30)
+
+        if resp.status_code == 401 and self._auth_method == "oauth" and not _retried:
+            from app.token_manager import token_manager
+            logger.warning("Got 401, invalidating cached token and retrying")
+            token_manager.invalidate(self.store_url, self._oauth_client_id)
+            return self._request(query, variables, _retried=True)
+
         resp.raise_for_status()
         result = resp.json()
 
@@ -463,3 +483,14 @@ class ShopifyClient:
                         max_other = qty
                 result[item_id] = max_other
         return result
+
+
+def create_shopify_client(store):
+    """Create a ShopifyClient from a store dict (as returned by PostgresManager)."""
+    if store.get("auth_method") == "oauth_client_credentials":
+        return ShopifyClient(
+            store["store_url"],
+            oauth_client_id=store["oauth_client_id"],
+            oauth_client_secret=store["oauth_client_secret"],
+        )
+    return ShopifyClient(store["store_url"], store["admin_access_token"])

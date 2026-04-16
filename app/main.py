@@ -4,7 +4,7 @@ import threading
 from flask import Flask, jsonify, request, render_template
 
 from app.database import PostgresManager, MSSQLManager
-from app.shopify_client import ShopifyClient
+from app.shopify_client import ShopifyClient, create_shopify_client
 from app.sync_engine import run_sync
 from app import scheduler
 
@@ -115,9 +115,17 @@ def create_store():
     data = request.get_json()
     if not data:
         return jsonify({"error": "No data provided"}), 400
-    for field in ["store_name", "store_url", "admin_access_token"]:
+    for field in ["store_name", "store_url"]:
         if not data.get(field):
             return jsonify({"error": f"{field} is required"}), 400
+    auth_method = data.get("auth_method", "legacy")
+    if auth_method == "oauth_client_credentials":
+        for field in ["oauth_client_id", "oauth_client_secret"]:
+            if not data.get(field):
+                return jsonify({"error": f"{field} is required for OAuth"}), 400
+    else:
+        if not data.get("admin_access_token"):
+            return jsonify({"error": "admin_access_token is required"}), 400
     store = pg.create_store(data)
     return to_json(store, 201)
 
@@ -147,7 +155,7 @@ def test_store_connection(store_id):
     if not store:
         return jsonify({"error": "Store not found"}), 404
     try:
-        client = ShopifyClient(store["store_url"], store["admin_access_token"])
+        client = create_shopify_client(store)
         result = client.test_connection()
         return jsonify({"success": True, **result})
     except Exception as e:
@@ -160,7 +168,7 @@ def get_store_locations(store_id):
     if not store:
         return jsonify({"error": "Store not found"}), 404
     try:
-        client = ShopifyClient(store["store_url"], store["admin_access_token"])
+        client = create_shopify_client(store)
         locations = client.get_locations()
         saved = pg.get_store_locations(store_id)
         saved_map = {loc["location_id"]: loc for loc in saved}
@@ -188,7 +196,7 @@ def fetch_publication(store_id):
     if not store:
         return jsonify({"error": "Store not found"}), 404
     try:
-        client = ShopifyClient(store["store_url"], store["admin_access_token"])
+        client = create_shopify_client(store)
         pub = client.get_online_store_publication()
         if pub:
             pg.update_store(store_id, {"publication_id": pub["id"]})
