@@ -124,7 +124,10 @@ class PostgresManager:
                 )
                 # OAuth client credentials support
                 cur.execute(
-                    "ALTER TABLE stores ADD COLUMN IF NOT EXISTS auth_method VARCHAR(20) DEFAULT 'legacy'"
+                    "ALTER TABLE stores ADD COLUMN IF NOT EXISTS auth_method VARCHAR(40) DEFAULT 'legacy'"
+                )
+                cur.execute(
+                    "ALTER TABLE stores ALTER COLUMN auth_method TYPE VARCHAR(40)"
                 )
                 cur.execute(
                     "ALTER TABLE stores ADD COLUMN IF NOT EXISTS oauth_client_id VARCHAR(255)"
