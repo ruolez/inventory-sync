@@ -816,7 +816,7 @@ class MSSQLManager:
             "SELECT ProductUPC, SUM(ISNULL(Qty, 0)) as InProgressQty "
             "FROM QuotationsInProgress "
             "WHERE ProductUPC IS NOT NULL AND ProductUPC != '' "
-            "AND (source IS NULL OR source NOT LIKE '%webSites%') "
+            "AND (SourceDB IS NULL OR SourceDB NOT LIKE '%webSites%') "
             "GROUP BY ProductUPC"
         )
         rows = cursor.fetchall()
