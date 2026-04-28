@@ -171,7 +171,7 @@ def run_sync(store_id, pg):
             ip = in_progress.get(upc, 0)
             committed = committed_by_upc.get(upc, 0)
             is_discontinued = upc in discontinued
-            final = 0 if is_discontinued else max(0, int(oh + po - ip + committed))
+            final = 0 if is_discontinued else max(0, int(oh + po - ip - committed))
             inventory[upc] = {
                 "final": final,
                 "on_hand": oh,
