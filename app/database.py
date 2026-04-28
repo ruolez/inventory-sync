@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS product_logs (
     quantity_on_hand REAL,
     pending_po_quantity REAL,
     in_progress_quantity INTEGER,
+    committed_quantity INTEGER,
     action VARCHAR(50),
     error_message TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
@@ -137,6 +138,9 @@ class PostgresManager:
                 )
                 cur.execute(
                     "ALTER TABLE stores ALTER COLUMN admin_access_token DROP NOT NULL"
+                )
+                cur.execute(
+                    "ALTER TABLE product_logs ADD COLUMN IF NOT EXISTS committed_quantity INTEGER"
                 )
             conn.commit()
         logger.info("PostgreSQL tables initialized")
@@ -438,8 +442,8 @@ class PostgresManager:
                     "INSERT INTO product_logs (sync_run_id, store_id, product_upc, "
                     "product_description, shopify_variant_id, shopify_product_id, "
                     "old_quantity, new_quantity, quantity_on_hand, pending_po_quantity, "
-                    "in_progress_quantity, action, error_message) "
-                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    "in_progress_quantity, committed_quantity, action, error_message) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     (
                         data.get("sync_run_id"),
                         data.get("store_id"),
@@ -452,6 +456,7 @@ class PostgresManager:
                         data.get("quantity_on_hand"),
                         data.get("pending_po_quantity"),
                         data.get("in_progress_quantity"),
+                        data.get("committed_quantity"),
                         data.get("action", "skip"),
                         data.get("error_message"),
                     ),
@@ -468,11 +473,11 @@ class PostgresManager:
                     "INSERT INTO product_logs (sync_run_id, store_id, product_upc, "
                     "product_description, shopify_variant_id, shopify_product_id, "
                     "old_quantity, new_quantity, quantity_on_hand, pending_po_quantity, "
-                    "in_progress_quantity, action, error_message, created_at) "
+                    "in_progress_quantity, committed_quantity, action, error_message, created_at) "
                     "VALUES (%(sync_run_id)s,%(store_id)s,%(product_upc)s,"
                     "%(product_description)s,%(shopify_variant_id)s,%(shopify_product_id)s,"
                     "%(old_quantity)s,%(new_quantity)s,%(quantity_on_hand)s,%(pending_po_quantity)s,"
-                    "%(in_progress_quantity)s,%(action)s,%(error_message)s,%(created_at)s)",
+                    "%(in_progress_quantity)s,%(committed_quantity)s,%(action)s,%(error_message)s,%(created_at)s)",
                     logs,
                 )
             conn.commit()

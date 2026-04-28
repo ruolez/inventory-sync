@@ -215,6 +215,7 @@ build_and_start() {
     sleep 10
 
     verify_containers
+    verify_schema_migrations || print_warning "Schema verification failed; review logs"
 }
 
 verify_containers() {
@@ -243,6 +244,42 @@ verify_containers() {
         print_warning "Health endpoint not responding yet (app may still be starting)"
         print_info "Try: curl http://localhost:${APP_PORT}/health"
     fi
+}
+
+verify_schema_migrations() {
+    cd "$INSTALL_DIR"
+
+    print_info "Verifying database schema migrations..."
+
+    # Wait briefly for init_tables() to complete on app startup
+    local attempts=0
+    local max_attempts=15
+    while [ $attempts -lt $max_attempts ]; do
+        if docker compose logs web 2>/dev/null | grep -q "PostgreSQL tables initialized"; then
+            break
+        fi
+        attempts=$((attempts + 1))
+        sleep 1
+    done
+
+    # Check that all expected columns exist on product_logs
+    local expected_columns="committed_quantity in_progress_quantity pending_po_quantity quantity_on_hand"
+    local missing=""
+
+    for col in $expected_columns; do
+        if ! docker compose exec -T db psql -U inventory -d inventory_sync -tAc \
+            "SELECT 1 FROM information_schema.columns WHERE table_name='product_logs' AND column_name='$col'" 2>/dev/null | grep -q "1"; then
+            missing="$missing $col"
+        fi
+    done
+
+    if [ -n "$missing" ]; then
+        print_error "Missing columns on product_logs:$missing"
+        print_info "Check: docker compose logs web | grep -i 'tables initialized'"
+        return 1
+    fi
+
+    print_success "Schema migrations applied (product_logs.committed_quantity present)"
 }
 
 ################################################################################
@@ -321,6 +358,7 @@ update_application() {
     sleep 10
 
     verify_containers
+    verify_schema_migrations || print_warning "Schema verification failed; review logs"
 
     echo ""
     print_success "Application updated successfully!"

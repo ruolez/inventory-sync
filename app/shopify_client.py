@@ -140,7 +140,8 @@ class ShopifyClient:
             inventoryLevels(first: 250, after: $cursor) {
               edges {
                 node {
-                  quantities(names: ["available"]) {
+                  quantities(names: ["available", "committed"]) {
+                    name
                     quantity
                   }
                   item {
@@ -171,7 +172,8 @@ class ShopifyClient:
             inventoryLevels(first: 250, after: $cursor) {
               edges {
                 node {
-                  quantities(names: ["available"]) {
+                  quantities(names: ["available", "committed"]) {
+                    name
                     quantity
                   }
                   item {
@@ -225,11 +227,15 @@ class ShopifyClient:
                     product_status = variant["product"].get("status")
                     if product_status != "ACTIVE":
                         continue
-                    quantities = node.get("quantities", [])
-                    available = quantities[0]["quantity"] if quantities else 0
+                    qty_by_name = {
+                        q["name"]: q["quantity"] for q in node.get("quantities", []) or []
+                    }
+                    available = qty_by_name.get("available", 0)
+                    committed = qty_by_name.get("committed", 0)
                     result_entry = {
                         "variant_id": variant["id"],
                         "inventory_quantity": available,
+                        "committed_quantity": committed,
                         "inventory_item_id": item["id"],
                         "product_id": variant["product"]["id"],
                         "product_title": variant["product"]["title"],
@@ -251,6 +257,75 @@ class ShopifyClient:
                 break
             cursor = page_info.get("endCursor")
 
+        return results
+
+    def get_committed_by_barcode(self, location_id):
+        query = """
+        query($locationId: ID!, $cursor: String) {
+          location(id: $locationId) {
+            inventoryLevels(first: 250, after: $cursor) {
+              edges {
+                node {
+                  quantities(names: ["committed"]) {
+                    name
+                    quantity
+                  }
+                  item {
+                    variant {
+                      barcode
+                    }
+                  }
+                }
+              }
+              pageInfo {
+                hasNextPage
+                endCursor
+              }
+            }
+          }
+        }
+        """
+        results = {}
+        cursor = None
+        total_fetched = 0
+
+        while True:
+            variables = {"locationId": location_id}
+            if cursor:
+                variables["cursor"] = cursor
+            data = self._request(query, variables)
+            location_data = data.get("location") or {}
+            levels_data = location_data.get("inventoryLevels", {})
+            edges = levels_data.get("edges", [])
+            total_fetched += len(edges)
+
+            for edge in edges:
+                node = edge["node"]
+                item = node.get("item") or {}
+                variant = item.get("variant")
+                if not variant:
+                    continue
+                barcode = variant.get("barcode")
+                if not barcode:
+                    continue
+                qty_by_name = {
+                    q["name"]: q["quantity"] for q in node.get("quantities", []) or []
+                }
+                committed = qty_by_name.get("committed", 0) or 0
+                if committed:
+                    results[barcode] = results.get(barcode, 0) + committed
+
+            page_info = levels_data.get("pageInfo", {})
+            if not page_info.get("hasNextPage"):
+                break
+            cursor = page_info.get("endCursor")
+
+        logger.info(
+            "Committed-by-barcode at location %s: %d barcodes with committed > 0 (scanned %d levels)",
+            location_id,
+            len(results),
+            total_fetched,
+        )
         return results
 
     def get_variants_by_barcodes(self, barcodes):

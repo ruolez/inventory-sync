@@ -3,7 +3,7 @@ import logging
 from datetime import datetime, timezone
 
 from app.database import PostgresManager, MSSQLManager
-from app.shopify_client import ShopifyClient, create_shopify_client
+from app.shopify_client import create_shopify_client
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +87,57 @@ def run_sync(store_id, pg):
             time.time() - phase_start,
         )
 
+        logger.info("=== Phase 1B: Aggregating committed quantity across all stores ===")
+        phase_start = time.time()
+        committed_by_upc = {}
+        current_store_committed_count = 0
+        for upc, v in variants.items():
+            qty = v.get("committed_quantity", 0) or 0
+            if qty:
+                committed_by_upc[upc] = committed_by_upc.get(upc, 0) + qty
+                current_store_committed_count += 1
+        logger.info(
+            "Current store (%s): %d UPCs with committed > 0",
+            store_id, current_store_committed_count,
+        )
+
+        for s_summary in pg.get_stores():
+            if s_summary["id"] == store_id:
+                continue
+            other_store = pg.get_store(s_summary["id"])
+            if not other_store:
+                continue
+            other_loc = pg.get_active_location(other_store["id"])
+            if not other_loc:
+                logger.warning(
+                    "Store %s (%s) has no active location, skipping committed fetch",
+                    other_store["id"], other_store.get("store_name"),
+                )
+                continue
+            try:
+                other_client = create_shopify_client(other_store)
+                other_committed = other_client.get_committed_by_barcode(
+                    other_loc["location_id"]
+                )
+            except Exception as e:
+                logger.error(
+                    "Failed to fetch committed from store %s (%s): %s",
+                    other_store["id"], other_store.get("store_name"), str(e),
+                )
+                continue
+            for upc, qty in other_committed.items():
+                if qty:
+                    committed_by_upc[upc] = committed_by_upc.get(upc, 0) + qty
+            logger.info(
+                "Store %s (%s): %d UPCs with committed > 0",
+                other_store["id"], other_store.get("store_name"), len(other_committed),
+            )
+
+        logger.info(
+            "Aggregated committed: %d UPCs across all stores (%.1fs)",
+            len(committed_by_upc), time.time() - phase_start,
+        )
+
         logger.info("=== Phase 2: Fetching SQL Server data ===")
         phase_start = time.time()
         on_hand = s2s.get_on_hand_quantities()
@@ -118,13 +169,15 @@ def run_sync(store_id, pg):
             oh = on_hand.get(upc, 0)
             po = pending_po.get(upc, 0)
             ip = in_progress.get(upc, 0)
+            committed = committed_by_upc.get(upc, 0)
             is_discontinued = upc in discontinued
-            final = 0 if is_discontinued else max(0, int(oh + po - ip))
+            final = 0 if is_discontinued else max(0, int(oh + po - ip + committed))
             inventory[upc] = {
                 "final": final,
                 "on_hand": oh,
                 "pending_po": po,
                 "in_progress": ip,
+                "committed": committed,
                 "discontinued": is_discontinued,
             }
         logger.info("Matched %d Shopify barcodes against SQL data", len(inventory))
@@ -153,6 +206,7 @@ def run_sync(store_id, pg):
                 "quantity_on_hand": inv_data["on_hand"],
                 "pending_po_quantity": inv_data["pending_po"],
                 "in_progress_quantity": inv_data["in_progress"],
+                "committed_quantity": inv_data["committed"],
                 "action": "skip",
                 "error_message": None,
                 "created_at": sql_server_start,
@@ -317,6 +371,7 @@ def run_sync(store_id, pg):
                 "quantity_on_hand": None,
                 "pending_po_quantity": None,
                 "in_progress_quantity": None,
+                "committed_quantity": None,
                 "action": "excluded",
                 "error_message": None,
                 "created_at": sql_server_start,

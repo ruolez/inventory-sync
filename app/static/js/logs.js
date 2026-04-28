@@ -41,14 +41,14 @@ async function loadLogs() {
         renderLogs(logs);
         updatePagination(logs.length);
     } catch (err) {
-        document.getElementById('logs-body').innerHTML = `<tr><td colspan="11" class="empty-state">Error: ${escapeHtml(err.message)}</td></tr>`;
+        document.getElementById('logs-body').innerHTML = `<tr><td colspan="12" class="empty-state">Error: ${escapeHtml(err.message)}</td></tr>`;
     }
 }
 
 function renderLogs(logs) {
     const tbody = document.getElementById('logs-body');
     if (!logs.length) {
-        tbody.innerHTML = '<tr><td colspan="11" class="empty-state">No logs found</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="12" class="empty-state">No logs found</td></tr>';
         return;
     }
 
@@ -65,6 +65,7 @@ function renderLogs(logs) {
             <td>${log.quantity_on_hand != null ? log.quantity_on_hand : '-'}</td>
             <td>${log.pending_po_quantity != null ? log.pending_po_quantity : '-'}</td>
             <td>${log.in_progress_quantity != null ? log.in_progress_quantity : '-'}</td>
+            <td>${log.committed_quantity != null ? log.committed_quantity : '-'}</td>
             <td>${log.old_quantity != null ? log.old_quantity : '-'}</td>
             <td>${log.new_quantity != null ? log.new_quantity : '-'}</td>
             <td style="white-space: nowrap;">${actionBadge(log.action)}</td>
