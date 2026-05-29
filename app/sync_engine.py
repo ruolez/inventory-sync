@@ -90,14 +90,29 @@ def run_sync(store_id, pg):
         logger.info("=== Phase 1B: Aggregating committed quantity across all stores ===")
         phase_start = time.time()
         committed_by_upc = {}
+        archived_excluded_units = 0
+
+        try:
+            current_archived = shopify.get_archived_committed_by_barcode()
+        except Exception as e:
+            logger.warning(
+                "Could not fetch archived-order committed for current store %s "
+                "(falling back to including archived; check read_orders scope): %s",
+                store_id, str(e),
+            )
+            current_archived = {}
+
         current_store_committed_count = 0
         for upc, v in variants.items():
-            qty = v.get("committed_quantity", 0) or 0
+            raw = v.get("committed_quantity", 0) or 0
+            archived = current_archived.get(upc, 0)
+            qty = max(0, raw - archived)
+            archived_excluded_units += min(raw, archived)
             if qty:
                 committed_by_upc[upc] = committed_by_upc.get(upc, 0) + qty
                 current_store_committed_count += 1
         logger.info(
-            "Current store (%s): %d UPCs with committed > 0",
+            "Current store (%s): %d UPCs with committed > 0 (after excluding archived)",
             store_id, current_store_committed_count,
         )
 
@@ -125,17 +140,29 @@ def run_sync(store_id, pg):
                     other_store["id"], other_store.get("store_name"), str(e),
                 )
                 continue
+            try:
+                other_archived = other_client.get_archived_committed_by_barcode()
+            except Exception as e:
+                logger.warning(
+                    "Could not fetch archived-order committed from store %s (%s) "
+                    "(falling back to including archived; check read_orders scope): %s",
+                    other_store["id"], other_store.get("store_name"), str(e),
+                )
+                other_archived = {}
             for upc, qty in other_committed.items():
-                if qty:
-                    committed_by_upc[upc] = committed_by_upc.get(upc, 0) + qty
+                archived = other_archived.get(upc, 0)
+                net = max(0, qty - archived)
+                archived_excluded_units += min(qty, archived)
+                if net:
+                    committed_by_upc[upc] = committed_by_upc.get(upc, 0) + net
             logger.info(
                 "Store %s (%s): %d UPCs with committed > 0",
                 other_store["id"], other_store.get("store_name"), len(other_committed),
             )
 
         logger.info(
-            "Aggregated committed: %d UPCs across all stores (%.1fs)",
-            len(committed_by_upc), time.time() - phase_start,
+            "Aggregated committed: %d UPCs across all stores; excluded %d units committed to archived orders (%.1fs)",
+            len(committed_by_upc), archived_excluded_units, time.time() - phase_start,
         )
 
         logger.info("=== Phase 2: Fetching SQL Server data ===")

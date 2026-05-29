@@ -328,6 +328,78 @@ class ShopifyClient:
         )
         return results
 
+    def get_archived_committed_by_barcode(self):
+        # Shopify keeps line items "committed" even after an order is archived
+        # (closed) without being fulfilled. This sums those still-committed units
+        # per barcode so the caller can exclude them from the committed total.
+        # status:closed = archived (cancelled is a separate status and already
+        # releases committed inventory); fulfillment_status:unfulfilled = null or partial.
+        query = """
+        query($cursor: String) {
+          orders(first: 100, after: $cursor, query: "status:closed fulfillment_status:unfulfilled") {
+            edges {
+              node {
+                id
+                lineItems(first: 100) {
+                  edges {
+                    node {
+                      unfulfilledQuantity
+                      variant {
+                        barcode
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
+          }
+        }
+        """
+        results = {}
+        cursor = None
+        total_orders = 0
+
+        while True:
+            variables = {}
+            if cursor:
+                variables["cursor"] = cursor
+            data = self._request(query, variables)
+            orders_data = data.get("orders") or {}
+            edges = orders_data.get("edges", [])
+            total_orders += len(edges)
+
+            for edge in edges:
+                node = edge["node"]
+                # Line items beyond the first 100 per order are not paginated; orders
+                # with >100 distinct variants are not expected for this use case.
+                for li_edge in (node.get("lineItems") or {}).get("edges", []):
+                    li = li_edge["node"]
+                    variant = li.get("variant")
+                    if not variant:
+                        continue
+                    barcode = variant.get("barcode")
+                    if not barcode:
+                        continue
+                    qty = li.get("unfulfilledQuantity", 0) or 0
+                    if qty:
+                        results[barcode] = results.get(barcode, 0) + qty
+
+            page_info = orders_data.get("pageInfo", {})
+            if not page_info.get("hasNextPage"):
+                break
+            cursor = page_info.get("endCursor")
+
+        logger.info(
+            "Archived-committed-by-barcode: %d barcodes still committed to archived orders (scanned %d orders)",
+            len(results),
+            total_orders,
+        )
+        return results
+
     def get_variants_by_barcodes(self, barcodes):
         if not barcodes:
             return {}
