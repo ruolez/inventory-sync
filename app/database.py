@@ -1,5 +1,6 @@
 import os
 import logging
+import threading
 from datetime import datetime, timedelta, timezone
 import psycopg2
 import psycopg2.extras
@@ -142,18 +143,49 @@ class PostgresManager:
                 cur.execute(
                     "ALTER TABLE product_logs ADD COLUMN IF NOT EXISTS committed_quantity INTEGER"
                 )
-                # Logs performance: index the default ordering and substring UPC search
-                cur.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_product_logs_created "
-                    "ON product_logs (created_at DESC)"
-                )
-                cur.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
-                cur.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_product_logs_upc_trgm "
-                    "ON product_logs USING gin (product_upc gin_trgm_ops)"
-                )
             conn.commit()
         logger.info("PostgreSQL tables initialized")
+        # Build logs-performance indexes off the startup path. CREATE INDEX
+        # CONCURRENTLY on a large product_logs table can take minutes and must
+        # not block (or crash) app startup, so it runs best-effort in the
+        # background; the app serves immediately and queries speed up once each
+        # index is ready.
+        threading.Thread(target=self._build_log_indexes, daemon=True).start()
+
+    # Each entry is best-effort: a failure (e.g. pg_trgm needing superuser) is
+    # logged and skipped without affecting the others or the running app.
+    LOG_INDEX_DDL = (
+        ("idx_product_logs_created",
+         "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_product_logs_created "
+         "ON product_logs (created_at DESC)"),
+        ("pg_trgm", "CREATE EXTENSION IF NOT EXISTS pg_trgm"),
+        ("idx_product_logs_upc_trgm",
+         "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_product_logs_upc_trgm "
+         "ON product_logs USING gin (product_upc gin_trgm_ops)"),
+    )
+
+    def _build_log_indexes(self):
+        # Autocommit: CREATE INDEX CONCURRENTLY cannot run inside a transaction.
+        conn = self.get_conn()
+        conn.autocommit = True
+        try:
+            with conn.cursor() as cur:
+                for name, ddl in self.LOG_INDEX_DDL:
+                    try:
+                        cur.execute(ddl)
+                        logger.info("Built logs index/extension: %s", name)
+                    except Exception as exc:
+                        logger.warning("Skipped logs index/extension %s: %s", name, exc)
+                        # A failed CONCURRENTLY build can leave an INVALID index
+                        # that IF NOT EXISTS would later skip; drop it so a retry
+                        # can rebuild cleanly. Extensions have no index to drop.
+                        if name.startswith("idx_"):
+                            try:
+                                cur.execute(f"DROP INDEX IF EXISTS {name}")
+                            except Exception:
+                                pass
+        finally:
+            conn.close()
 
     # --- Stores ---
 
