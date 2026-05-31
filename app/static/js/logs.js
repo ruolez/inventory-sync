@@ -1,6 +1,7 @@
 let currentPage = 0;
 const pageSize = 100;
 let searchTimeout = null;
+let totalLogs = 0;
 
 async function init() {
     await loadStoreFilter();
@@ -23,23 +24,32 @@ async function loadStoreFilter() {
     }
 }
 
-async function loadLogs() {
+function filterParams() {
+    const params = new URLSearchParams();
     const storeId = document.getElementById('filter-store').value;
     const action = document.getElementById('filter-action').value;
     const upc = document.getElementById('filter-upc').value.trim();
-    const params = new URLSearchParams({
-        limit: pageSize,
-        offset: currentPage * pageSize,
-    });
     if (storeId) params.set('store_id', storeId);
     if (action) params.set('action', action);
     if (upc) params.set('upc', upc);
+    return params;
+}
+
+// refreshCount: re-query the total (only needed when filters change, not on Prev/Next)
+async function loadLogs(refreshCount = true) {
+    const params = filterParams();
+    params.set('limit', pageSize);
+    params.set('offset', currentPage * pageSize);
 
     try {
-        const res = await fetch(`/api/logs?${params}`);
-        const logs = await res.json();
+        const logsReq = fetch(`/api/logs?${params}`).then(r => r.json());
+        const countReq = refreshCount
+            ? fetch(`/api/logs/count?${filterParams()}`).then(r => r.json())
+            : Promise.resolve(null);
+        const [logs, count] = await Promise.all([logsReq, countReq]);
+        if (count) totalLogs = count.total;
         renderLogs(logs);
-        updatePagination(logs.length);
+        updatePagination();
     } catch (err) {
         document.getElementById('logs-body').innerHTML = `<tr><td colspan="12" class="empty-state">Error: ${escapeHtml(err.message)}</td></tr>`;
     }
@@ -94,22 +104,24 @@ function debounceSearch() {
     }, 300);
 }
 
-function updatePagination(count) {
-    document.getElementById('page-info').textContent = `Page ${currentPage + 1}`;
+function updatePagination() {
+    const totalPages = Math.max(1, Math.ceil(totalLogs / pageSize));
+    document.getElementById('page-info').textContent =
+        `Page ${currentPage + 1} of ${totalPages} · ${totalLogs.toLocaleString()} logs`;
     document.getElementById('prev-btn').disabled = currentPage === 0;
-    document.getElementById('next-btn').disabled = count < pageSize;
+    document.getElementById('next-btn').disabled = currentPage >= totalPages - 1;
 }
 
 function prevPage() {
     if (currentPage > 0) {
         currentPage--;
-        loadLogs();
+        loadLogs(false);
     }
 }
 
 function nextPage() {
     currentPage++;
-    loadLogs();
+    loadLogs(false);
 }
 
 init();

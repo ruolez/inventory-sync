@@ -142,6 +142,16 @@ class PostgresManager:
                 cur.execute(
                     "ALTER TABLE product_logs ADD COLUMN IF NOT EXISTS committed_quantity INTEGER"
                 )
+                # Logs performance: index the default ordering and substring UPC search
+                cur.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_product_logs_created "
+                    "ON product_logs (created_at DESC)"
+                )
+                cur.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
+                cur.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_product_logs_upc_trgm "
+                    "ON product_logs USING gin (product_upc gin_trgm_ops)"
+                )
             conn.commit()
         logger.info("PostgreSQL tables initialized")
 
@@ -482,32 +492,46 @@ class PostgresManager:
                 )
             conn.commit()
 
+    @staticmethod
+    def _product_logs_filter(store_id=None, sync_run_id=None, upc=None, action=None):
+        clause = " WHERE 1=1"
+        params = []
+        if store_id:
+            clause += " AND pl.store_id = %s"
+            params.append(store_id)
+        if sync_run_id:
+            clause += " AND pl.sync_run_id = %s"
+            params.append(sync_run_id)
+        if upc:
+            clause += " AND pl.product_upc ILIKE %s"
+            params.append(f"%{upc}%")
+        if action:
+            clause += " AND pl.action = %s"
+            params.append(action)
+        return clause, params
+
     def get_product_logs(
         self, store_id=None, sync_run_id=None, upc=None, action=None, limit=100, offset=0
     ):
+        clause, params = self._product_logs_filter(store_id, sync_run_id, upc, action)
         query = (
             "SELECT pl.*, s.store_name FROM product_logs pl "
-            "JOIN stores s ON pl.store_id = s.id WHERE 1=1"
+            "JOIN stores s ON pl.store_id = s.id" + clause
         )
-        params = []
-        if store_id:
-            query += " AND pl.store_id = %s"
-            params.append(store_id)
-        if sync_run_id:
-            query += " AND pl.sync_run_id = %s"
-            params.append(sync_run_id)
-        if upc:
-            query += " AND pl.product_upc ILIKE %s"
-            params.append(f"%{upc}%")
-        if action:
-            query += " AND pl.action = %s"
-            params.append(action)
         query += " ORDER BY pl.created_at DESC LIMIT %s OFFSET %s"
         params.extend([limit, offset])
         with self.get_conn() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute(query, params)
                 return [dict(r) for r in cur.fetchall()]
+
+    def count_product_logs(self, store_id=None, sync_run_id=None, upc=None, action=None):
+        clause, params = self._product_logs_filter(store_id, sync_run_id, upc, action)
+        query = "SELECT COUNT(*) FROM product_logs pl" + clause
+        with self.get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, params)
+                return cur.fetchone()[0]
 
     # --- Dashboard Stats ---
 
