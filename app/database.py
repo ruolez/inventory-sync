@@ -1,6 +1,7 @@
 import os
 import logging
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 import psycopg2
 import psycopg2.extras
@@ -11,6 +12,8 @@ logger = logging.getLogger(__name__)
 DATABASE_URL = os.environ.get(
     "DATABASE_URL", "postgresql://inventory:inventory@db:5432/inventory_sync"
 )
+
+LOG_RETENTION_DAYS = int(os.environ.get("LOG_RETENTION_DAYS", "14"))
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS stores (
@@ -186,6 +189,39 @@ class PostgresManager:
                                 pass
         finally:
             conn.close()
+
+    def purge_old_product_logs(
+        self, retention_days=LOG_RETENTION_DAYS, batch_size=10000, stop_event=None
+    ):
+        """Delete product_logs older than retention_days in committed batches.
+        Batching avoids a long lock, a huge WAL spike, and severe bloat that a
+        single multi-million-row DELETE would cause on a large table. The inner
+        lookup uses idx_product_logs_created. Returns total rows deleted."""
+        conn = self.get_conn()
+        conn.autocommit = True
+        total = 0
+        try:
+            with conn.cursor() as cur:
+                while stop_event is None or not stop_event.is_set():
+                    cur.execute(
+                        "DELETE FROM product_logs WHERE ctid IN ("
+                        "SELECT ctid FROM product_logs "
+                        "WHERE created_at < NOW() - make_interval(days => %s) "
+                        "LIMIT %s)",
+                        (retention_days, batch_size),
+                    )
+                    total += cur.rowcount
+                    if cur.rowcount < batch_size:
+                        break
+                    # Ease off between batches so the initial large cleanup does
+                    # not saturate disk I/O; interruptible when a stop_event is given.
+                    if stop_event is not None:
+                        stop_event.wait(0.5)
+                    else:
+                        time.sleep(0.5)
+        finally:
+            conn.close()
+        return total
 
     # --- Stores ---
 

@@ -88,6 +88,40 @@ def stop_scheduler(store_id, pg):
         return True
 
 
+_purge_stop = threading.Event()
+_purge_thread = None
+
+
+def _purge_loop(pg, initial_delay_seconds, interval_hours):
+    # Initial delay lets the background idx_product_logs_created build (also
+    # spawned at startup) finish, so the first purge uses the index.
+    if _purge_stop.wait(initial_delay_seconds):
+        return
+    logger.info("Log purge started (every %d hours)", interval_hours)
+    while not _purge_stop.is_set():
+        try:
+            deleted = pg.purge_old_product_logs(stop_event=_purge_stop)
+            logger.info("Log purge removed %d old product_logs rows", deleted)
+        except Exception as e:
+            logger.error("Log purge failed: %s", str(e))
+        _purge_stop.wait(interval_hours * 3600)
+    logger.info("Log purge stopped")
+
+
+def start_log_purge_scheduler(pg, initial_delay_seconds=120, interval_hours=24):
+    global _purge_thread
+    if _purge_thread and _purge_thread.is_alive():
+        return False
+    _purge_stop.clear()
+    _purge_thread = threading.Thread(
+        target=_purge_loop,
+        args=(pg, initial_delay_seconds, interval_hours),
+        daemon=True,
+    )
+    _purge_thread.start()
+    return True
+
+
 def get_all_statuses():
     with _lock:
         statuses = {}
