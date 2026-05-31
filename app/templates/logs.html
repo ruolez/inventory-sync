@@ -75,7 +75,7 @@
 
         <!-- Main Content -->
         <main class="main-content">
-            <div class="container">
+            <div class="container container-wide">
                 <div class="page-header">
                     <h1>Product Logs</h1>
                     <p>Detailed log of every product change during sync runs</p>
@@ -109,33 +109,19 @@
                     </div>
 
                     <div class="table-wrapper">
-                        <table style="table-layout: fixed; width: 100%;">
-                            <colgroup>
-                                <col style="width: 145px;">
-                                <col style="width: 60px;">
-                                <col style="width: 120px;">
-                                <col>
-                                <col style="width: 70px;">
-                                <col style="width: 80px;">
-                                <col style="width: 85px;">
-                                <col style="width: 80px;">
-                                <col style="width: 65px;">
-                                <col style="width: 65px;">
-                                <col style="width: 75px;">
-                                <col style="width: 36px;">
-                            </colgroup>
+                        <table class="logs-table">
                             <thead>
                                 <tr>
                                     <th>Time</th>
                                     <th>Store</th>
-                                    <th>UPC</th>
-                                    <th>Product</th>
-                                    <th>On Hand</th>
-                                    <th>Pending PO</th>
-                                    <th>In Progress</th>
-                                    <th>Committed</th>
-                                    <th>Old Qty</th>
-                                    <th>New Qty</th>
+                                    <th class="col-upc">UPC</th>
+                                    <th class="col-product">Product</th>
+                                    <th class="col-num">On Hand</th>
+                                    <th class="col-num">Pending PO</th>
+                                    <th class="col-num">In Progress</th>
+                                    <th class="col-num">Committed</th>
+                                    <th class="col-num">Old Qty</th>
+                                    <th class="col-num">New Qty</th>
                                     <th>Action</th>
                                     <th></th>
                                 </tr>

@@ -316,6 +316,8 @@ html.sidebar-collapsed .main-content { margin-left: var(--sidebar-collapsed); }
     padding: 32px;
 }
 
+.container.container-wide { max-width: none; }
+
 /* --- Page Header --- */
 
 .page-header { margin-bottom: 28px; }
@@ -565,6 +567,14 @@ tbody td {
 tbody tr { transition: background 0.1s ease; }
 
 tbody tr:hover { background: var(--bg-2); }
+
+/* --- Logs table: content-fit columns, no truncated headers --- */
+table.logs-table { table-layout: auto; min-width: 1000px; }
+.logs-table th, .logs-table td { white-space: nowrap; }
+.logs-table .col-time { font-size: 11px; }
+.logs-table .col-num { text-align: right; }
+.logs-table .col-upc { max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+.logs-table .col-product { white-space: normal; width: 100%; min-width: 220px; }
 
 tbody tr:last-child td { border-bottom: none; }
 
