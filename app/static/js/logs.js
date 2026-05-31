@@ -2,6 +2,7 @@ let currentPage = 0;
 const pageSize = 100;
 let searchTimeout = null;
 let totalLogs = 0;
+let totalEstimated = false;
 
 async function init() {
     await loadStoreFilter();
@@ -35,23 +36,34 @@ function filterParams() {
     return params;
 }
 
-// refreshCount: re-query the total (only needed when filters change, not on Prev/Next)
+// refreshCount: re-query the total (only needed when filters change, not on Prev/Next).
+// The count never blocks first paint — logs render as soon as /api/logs returns.
 async function loadLogs(refreshCount = true) {
     const params = filterParams();
     params.set('limit', pageSize);
     params.set('offset', currentPage * pageSize);
 
+    if (refreshCount) refreshTotal();
+
     try {
-        const logsReq = fetch(`/api/logs?${params}`).then(r => r.json());
-        const countReq = refreshCount
-            ? fetch(`/api/logs/count?${filterParams()}`).then(r => r.json())
-            : Promise.resolve(null);
-        const [logs, count] = await Promise.all([logsReq, countReq]);
-        if (count) totalLogs = count.total;
+        const res = await fetch(`/api/logs?${params}`);
+        const logs = await res.json();
         renderLogs(logs);
         updatePagination();
     } catch (err) {
         document.getElementById('logs-body').innerHTML = `<tr><td colspan="12" class="empty-state">Error: ${escapeHtml(err.message)}</td></tr>`;
+    }
+}
+
+async function refreshTotal() {
+    try {
+        const res = await fetch(`/api/logs/count?${filterParams()}`);
+        const data = await res.json();
+        totalLogs = data.total;
+        totalEstimated = data.estimated;
+        updatePagination();
+    } catch (err) {
+        // leave the prior total in place if the count request fails
     }
 }
 
@@ -106,8 +118,9 @@ function debounceSearch() {
 
 function updatePagination() {
     const totalPages = Math.max(1, Math.ceil(totalLogs / pageSize));
+    const totalLabel = `${totalEstimated ? '~' : ''}${totalLogs.toLocaleString()}`;
     document.getElementById('page-info').textContent =
-        `Page ${currentPage + 1} of ${totalPages} · ${totalLogs.toLocaleString()} logs`;
+        `Page ${currentPage + 1} of ${totalPages} · ${totalLabel} logs`;
     document.getElementById('prev-btn').disabled = currentPage === 0;
     document.getElementById('next-btn').disabled = currentPage >= totalPages - 1;
 }

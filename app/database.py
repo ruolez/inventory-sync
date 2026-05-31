@@ -526,12 +526,23 @@ class PostgresManager:
                 return [dict(r) for r in cur.fetchall()]
 
     def count_product_logs(self, store_id=None, sync_run_id=None, upc=None, action=None):
+        """Return (total, estimated). The unfiltered total uses the planner's
+        row estimate (O(1)) since an exact COUNT(*) over the whole table is an
+        O(n) scan; filtered counts stay exact over their smaller subset."""
+        if not any([store_id, sync_run_id, upc, action]):
+            with self.get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT reltuples::bigint FROM pg_class WHERE relname = 'product_logs'"
+                    )
+                    row = cur.fetchone()
+            return max(int(row[0]) if row and row[0] is not None else 0, 0), True
         clause, params = self._product_logs_filter(store_id, sync_run_id, upc, action)
         query = "SELECT COUNT(*) FROM product_logs pl" + clause
         with self.get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(query, params)
-                return cur.fetchone()[0]
+                return cur.fetchone()[0], False
 
     # --- Dashboard Stats ---
 

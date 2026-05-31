@@ -406,13 +406,13 @@ def get_logs():
 
 @app.route("/api/logs/count", methods=["GET"])
 def get_logs_count():
-    total = pg.count_product_logs(
+    total, estimated = pg.count_product_logs(
         store_id=request.args.get("store_id", type=int),
         sync_run_id=request.args.get("sync_run_id", type=int),
         upc=request.args.get("upc"),
         action=request.args.get("action"),
     )
-    return to_json({"total": total})
+    return to_json({"total": total, "estimated": estimated})
 
 
 # --- Dashboard Stats ---
