@@ -1,12 +1,18 @@
 import time
 import logging
+import random
+import uuid
 import requests
 
 logger = logging.getLogger(__name__)
 
-API_VERSION = "2025-01"
+API_VERSION = "2026-04"
 RATE_LIMIT_THRESHOLD = 100
 RATE_LIMIT_SLEEP = 1.0
+MAX_RETRIES = 5
+RETRY_BASE_DELAY = 1.0
+RETRY_MAX_DELAY = 30.0
+RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 
 
 class ShopifyClient:
@@ -31,45 +37,109 @@ class ShopifyClient:
             self.store_url, self._oauth_client_id, self._oauth_client_secret
         )
 
-    def _request(self, query, variables=None, _retried=False):
-        headers = {
-            "X-Shopify-Access-Token": self.token,
-            "Content-Type": "application/json",
-        }
+    def _sleep_backoff(self, attempt, reason, override=None):
+        if override is not None:
+            delay = max(0.0, override)
+        else:
+            delay = min(RETRY_MAX_DELAY, RETRY_BASE_DELAY * (2 ** attempt))
+            delay += random.uniform(0, delay * 0.25)
+        logger.warning(
+            "Shopify request retry %d/%d in %.1fs (%s)",
+            attempt + 1, MAX_RETRIES, delay, reason,
+        )
+        time.sleep(delay)
+
+    @staticmethod
+    def _retry_after_seconds(resp):
+        raw = resp.headers.get("Retry-After")
+        if not raw:
+            return None
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _is_retryable_graphql(result):
+        # Top-level THROTTLED errors and idempotency-concurrent userErrors are
+        # transient and safe to retry; all other GraphQL errors are deterministic.
+        for e in result.get("errors") or []:
+            if (e.get("extensions") or {}).get("code") == "THROTTLED":
+                return True
+        for value in (result.get("data") or {}).values():
+            if isinstance(value, dict):
+                for ue in value.get("userErrors") or []:
+                    if ue.get("code") == "IDEMPOTENCY_CONCURRENT_REQUEST":
+                        return True
+        return False
+
+    def _request(self, query, variables=None):
         payload = {"query": query}
         if variables:
             payload["variables"] = variables
 
-        if self.available_points < RATE_LIMIT_THRESHOLD:
-            logger.info(
-                "Rate limit low (%d points), sleeping %.1fs",
-                self.available_points,
-                RATE_LIMIT_SLEEP,
-            )
-            time.sleep(RATE_LIMIT_SLEEP)
+        reauthed = False
+        attempt = 0
+        while True:
+            if self.available_points < RATE_LIMIT_THRESHOLD:
+                logger.info(
+                    "Rate limit low (%d points), sleeping %.1fs",
+                    self.available_points,
+                    RATE_LIMIT_SLEEP,
+                )
+                time.sleep(RATE_LIMIT_SLEEP)
 
-        resp = requests.post(self.graphql_url, json=payload, headers=headers, timeout=30)
+            headers = {
+                "X-Shopify-Access-Token": self.token,
+                "Content-Type": "application/json",
+            }
 
-        if resp.status_code == 401 and self._auth_method == "oauth" and not _retried:
-            from app.token_manager import token_manager
-            logger.warning("Got 401, invalidating cached token and retrying")
-            token_manager.invalidate(self.store_url, self._oauth_client_id)
-            return self._request(query, variables, _retried=True)
+            try:
+                resp = requests.post(
+                    self.graphql_url, json=payload, headers=headers, timeout=30
+                )
+            except requests.exceptions.RequestException as e:
+                if attempt < MAX_RETRIES:
+                    self._sleep_backoff(attempt, f"network error: {e}")
+                    attempt += 1
+                    continue
+                raise
 
-        resp.raise_for_status()
-        result = resp.json()
+            # OAuth token expiry: one-shot reauth, does not consume retry budget.
+            if resp.status_code == 401 and self._auth_method == "oauth" and not reauthed:
+                from app.token_manager import token_manager
+                logger.warning("Got 401, invalidating cached token and retrying")
+                token_manager.invalidate(self.store_url, self._oauth_client_id)
+                reauthed = True
+                continue
 
-        extensions = result.get("extensions", {})
-        cost = extensions.get("cost", {})
-        throttle = cost.get("throttleStatus", {})
-        if "currentlyAvailable" in throttle:
-            self.available_points = throttle["currentlyAvailable"]
+            if resp.status_code in RETRYABLE_STATUS and attempt < MAX_RETRIES:
+                self._sleep_backoff(
+                    attempt,
+                    f"HTTP {resp.status_code}",
+                    override=self._retry_after_seconds(resp),
+                )
+                attempt += 1
+                continue
 
-        if "errors" in result and result["errors"]:
-            error_msgs = [e.get("message", str(e)) for e in result["errors"]]
-            raise Exception(f"Shopify GraphQL errors: {'; '.join(error_msgs)}")
+            resp.raise_for_status()
+            result = resp.json()
 
-        return result.get("data", {})
+            extensions = result.get("extensions", {})
+            cost = extensions.get("cost", {})
+            throttle = cost.get("throttleStatus", {})
+            if "currentlyAvailable" in throttle:
+                self.available_points = throttle["currentlyAvailable"]
+
+            if result.get("errors"):
+                if self._is_retryable_graphql(result) and attempt < MAX_RETRIES:
+                    self._sleep_backoff(attempt, "GraphQL throttled/transient")
+                    attempt += 1
+                    continue
+                error_msgs = [e.get("message", str(e)) for e in result["errors"]]
+                raise Exception(f"Shopify GraphQL errors: {'; '.join(error_msgs)}")
+
+            return result.get("data", {})
 
     def test_connection(self):
         data = self._request("{ shop { name myshopifyDomain } }")
@@ -113,7 +183,9 @@ class ShopifyClient:
             edges {
               node {
                 id
-                name
+                catalog {
+                  title
+                }
               }
             }
           }
@@ -123,7 +195,8 @@ class ShopifyClient:
         publications = []
         for edge in data.get("publications", {}).get("edges", []):
             node = edge["node"]
-            publications.append({"id": node["id"], "name": node["name"]})
+            name = (node.get("catalog") or {}).get("title") or ""
+            publications.append({"id": node["id"], "name": name})
         return publications
 
     def get_online_store_publication(self):
@@ -146,13 +219,17 @@ class ShopifyClient:
                   }
                   item {
                     id
-                    variant {
-                      id
-                      barcode
-                      product {
-                        id
-                        title
-                        status
+                    variants(first: 1) {
+                      edges {
+                        node {
+                          id
+                          barcode
+                          product {
+                            id
+                            title
+                            status
+                          }
+                        }
                       }
                     }
                   }
@@ -178,14 +255,18 @@ class ShopifyClient:
                   }
                   item {
                     id
-                    variant {
-                      id
-                      barcode
-                      product {
-                        id
-                        title
-                        status
-                        publishedOnPublication(publicationId: $publicationId)
+                    variants(first: 1) {
+                      edges {
+                        node {
+                          id
+                          barcode
+                          product {
+                            id
+                            title
+                            status
+                            publishedOnPublication(publicationId: $publicationId)
+                          }
+                        }
                       }
                     }
                   }
@@ -219,7 +300,8 @@ class ShopifyClient:
             for edge in edges:
                 node = edge["node"]
                 item = node.get("item", {})
-                variant = item.get("variant")
+                variant_edges = (item.get("variants") or {}).get("edges", [])
+                variant = variant_edges[0]["node"] if variant_edges else None
                 if not variant:
                     continue
                 barcode = variant.get("barcode")
@@ -271,8 +353,12 @@ class ShopifyClient:
                     quantity
                   }
                   item {
-                    variant {
-                      barcode
+                    variants(first: 1) {
+                      edges {
+                        node {
+                          barcode
+                        }
+                      }
                     }
                   }
                 }
@@ -302,7 +388,8 @@ class ShopifyClient:
             for edge in edges:
                 node = edge["node"]
                 item = node.get("item") or {}
-                variant = item.get("variant")
+                variant_edges = (item.get("variants") or {}).get("edges", [])
+                variant = variant_edges[0]["node"] if variant_edges else None
                 if not variant:
                     continue
                 barcode = variant.get("barcode")
@@ -445,12 +532,13 @@ class ShopifyClient:
 
     def set_inventory_quantity(self, inventory_item_id, location_id, quantity):
         mutation = """
-        mutation inventorySetQuantities($input: InventorySetQuantitiesInput!) {
-          inventorySetQuantities(input: $input) {
+        mutation inventorySetQuantities($input: InventorySetQuantitiesInput!, $idempotencyKey: String!) {
+          inventorySetQuantities(input: $input) @idempotent(key: $idempotencyKey) {
             inventoryAdjustmentGroup {
               createdAt
             }
             userErrors {
+              code
               field
               message
             }
@@ -458,18 +546,19 @@ class ShopifyClient:
         }
         """
         variables = {
+            "idempotencyKey": str(uuid.uuid4()),
             "input": {
                 "name": "available",
                 "reason": "correction",
-                "ignoreCompareQuantity": True,
                 "quantities": [
                     {
                         "inventoryItemId": inventory_item_id,
                         "locationId": location_id,
                         "quantity": quantity,
+                        "changeFromQuantity": None,
                     }
                 ],
-            }
+            },
         }
         data = self._request(mutation, variables)
         errors = (
@@ -482,12 +571,13 @@ class ShopifyClient:
 
     def set_inventory_quantities_batch(self, items, location_id):
         mutation = """
-        mutation inventorySetQuantities($input: InventorySetQuantitiesInput!) {
-          inventorySetQuantities(input: $input) {
+        mutation inventorySetQuantities($input: InventorySetQuantitiesInput!, $idempotencyKey: String!) {
+          inventorySetQuantities(input: $input) @idempotent(key: $idempotencyKey) {
             inventoryAdjustmentGroup {
               createdAt
             }
             userErrors {
+              code
               field
               message
             }
@@ -499,16 +589,17 @@ class ShopifyClient:
                 "inventoryItemId": item["inventory_item_id"],
                 "locationId": location_id,
                 "quantity": item["quantity"],
+                "changeFromQuantity": None,
             }
             for item in items
         ]
         variables = {
+            "idempotencyKey": str(uuid.uuid4()),
             "input": {
                 "name": "available",
                 "reason": "correction",
-                "ignoreCompareQuantity": True,
                 "quantities": quantities,
-            }
+            },
         }
         data = self._request(mutation, variables)
         errors = (
