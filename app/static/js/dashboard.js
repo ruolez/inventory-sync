@@ -87,19 +87,25 @@ function renderStoreCards(stores) {
 function renderRecentRuns(runs) {
     const tbody = document.getElementById('recent-runs');
     if (!runs.length) {
-        tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No sync runs yet</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No stores configured</td></tr>';
         return;
     }
 
     tbody.innerHTML = runs.map(run => {
+        const neverSynced = !run.started_at;
         const isRunning = run.status === 'running';
-        const processed = run.products_updated + run.products_published + run.products_skipped + run.errors_count;
+        const processed = (run.products_updated || 0) + (run.products_published || 0) + (run.products_skipped || 0) + (run.errors_count || 0);
         const total = run.total_products || 0;
-        const statusCell = isRunning && total > 0
-            ? `<span class="badge badge-info"><span class="pulse-dot"></span>${processed}/${total}</span>`
-            : isRunning
-            ? '<span class="badge badge-info"><span class="pulse-dot"></span>running</span>'
-            : statusBadge(run.status);
+        let statusCell;
+        if (neverSynced) {
+            statusCell = '<span class="badge badge-neutral">Never synced</span>';
+        } else if (isRunning && total > 0) {
+            statusCell = `<span class="badge badge-info"><span class="pulse-dot"></span>${processed}/${total}</span>`;
+        } else if (isRunning) {
+            statusCell = '<span class="badge badge-info"><span class="pulse-dot"></span>running</span>';
+        } else {
+            statusCell = statusBadge(run.status);
+        }
         let durationCell;
         if (run.duration_seconds) {
             durationCell = run.duration_seconds.toFixed(1) + 's';
@@ -107,16 +113,19 @@ function renderRecentRuns(runs) {
             const elapsed = (Date.now() - new Date(run.started_at).getTime()) / 1000;
             durationCell = elapsed >= 60 ? Math.floor(elapsed / 60) + 'm ' + Math.floor(elapsed % 60) + 's' : Math.floor(elapsed) + 's';
         } else {
-            durationCell = '-';
+            durationCell = '—';
         }
+        const nameCell = run.sync_enabled
+            ? escapeHtml(run.store_name)
+            : `${escapeHtml(run.store_name)} <span style="color: var(--text-secondary); font-size: 11px;">(disabled)</span>`;
         return `
         <tr>
-            <td>${escapeHtml(run.store_name)}</td>
-            <td style="font-size: 12px;">${formatDate(run.started_at)}</td>
+            <td>${nameCell}</td>
+            <td style="font-size: 12px;">${neverSynced ? 'Never' : formatDate(run.started_at)}</td>
             <td>${statusCell}</td>
-            <td>${run.products_updated}</td>
-            <td>${run.products_published}</td>
-            <td>${run.errors_count > 0 ? `<span style="color: var(--error);">${run.errors_count}</span>` : '0'}</td>
+            <td>${neverSynced ? '—' : run.products_updated}</td>
+            <td>${neverSynced ? '—' : run.products_published}</td>
+            <td>${neverSynced ? '—' : (run.errors_count > 0 ? `<span style="color: var(--error);">${run.errors_count}</span>` : '0')}</td>
             <td>${durationCell}</td>
         </tr>`;
     }).join('');

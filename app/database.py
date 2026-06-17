@@ -636,9 +636,17 @@ class PostgresManager:
                 changes_24h = cur.fetchone()["total"]
 
                 cur.execute(
-                    "SELECT sr.*, s.store_name FROM sync_runs sr "
-                    "JOIN stores s ON sr.store_id = s.id "
-                    "ORDER BY sr.started_at DESC LIMIT 5"
+                    "SELECT s.id AS store_id, s.store_name, s.sync_enabled, "
+                    "sr.id AS run_id, sr.started_at, sr.status, "
+                    "sr.total_products, sr.products_updated, sr.products_published, "
+                    "sr.errors_count, sr.duration_seconds "
+                    "FROM stores s "
+                    "LEFT JOIN LATERAL ("
+                    "  SELECT * FROM sync_runs r "
+                    "  WHERE r.store_id = s.id "
+                    "  ORDER BY r.started_at DESC LIMIT 1"
+                    ") sr ON true "
+                    "ORDER BY sr.started_at DESC NULLS LAST, s.store_name ASC"
                 )
                 recent_runs = [dict(r) for r in cur.fetchall()]
 
