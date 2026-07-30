@@ -51,7 +51,7 @@ async function loadLogs(refreshCount = true) {
         renderLogs(logs);
         updatePagination();
     } catch (err) {
-        document.getElementById('logs-body').innerHTML = `<tr><td colspan="12" class="empty-state">Error: ${escapeHtml(err.message)}</td></tr>`;
+        document.getElementById('logs-body').innerHTML = `<tr><td colspan="13" class="empty-state">Error: ${escapeHtml(err.message)}</td></tr>`;
     }
 }
 
@@ -70,7 +70,7 @@ async function refreshTotal() {
 function renderLogs(logs) {
     const tbody = document.getElementById('logs-body');
     if (!logs.length) {
-        tbody.innerHTML = '<tr><td colspan="12" class="empty-state">No logs found</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="13" class="empty-state">No logs found</td></tr>';
         return;
     }
 
@@ -87,6 +87,7 @@ function renderLogs(logs) {
             <td class="col-product">${escapeHtml(log.product_description || '')}</td>
             <td class="col-num">${log.quantity_on_hand != null ? log.quantity_on_hand : '-'}</td>
             <td class="col-num">${log.pending_po_quantity != null ? log.pending_po_quantity : '-'}</td>
+            <td class="col-num">${log.unconfirmed_po_quantity != null ? log.unconfirmed_po_quantity : '-'}</td>
             <td class="col-num">${log.in_progress_quantity != null ? log.in_progress_quantity : '-'}</td>
             <td class="col-num">${log.committed_quantity != null ? log.committed_quantity : '-'}</td>
             <td class="col-num">${log.old_quantity != null ? log.old_quantity : '-'}</td>

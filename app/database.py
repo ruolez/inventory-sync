@@ -80,6 +80,7 @@ CREATE TABLE IF NOT EXISTS product_logs (
     new_quantity INTEGER,
     quantity_on_hand REAL,
     pending_po_quantity REAL,
+    unconfirmed_po_quantity REAL,
     in_progress_quantity INTEGER,
     committed_quantity INTEGER,
     action VARCHAR(50),
@@ -145,6 +146,9 @@ class PostgresManager:
                 )
                 cur.execute(
                     "ALTER TABLE product_logs ADD COLUMN IF NOT EXISTS committed_quantity INTEGER"
+                )
+                cur.execute(
+                    "ALTER TABLE product_logs ADD COLUMN IF NOT EXISTS unconfirmed_po_quantity REAL"
                 )
                 # Sync interval moved from hours to minutes. RENAME COLUMN has no
                 # IF EXISTS form, so the information_schema guard makes this a
@@ -541,8 +545,9 @@ class PostgresManager:
                     "INSERT INTO product_logs (sync_run_id, store_id, product_upc, "
                     "product_description, shopify_variant_id, shopify_product_id, "
                     "old_quantity, new_quantity, quantity_on_hand, pending_po_quantity, "
-                    "in_progress_quantity, committed_quantity, action, error_message) "
-                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    "unconfirmed_po_quantity, in_progress_quantity, committed_quantity, "
+                    "action, error_message) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     (
                         data.get("sync_run_id"),
                         data.get("store_id"),
@@ -554,6 +559,7 @@ class PostgresManager:
                         data.get("new_quantity"),
                         data.get("quantity_on_hand"),
                         data.get("pending_po_quantity"),
+                        data.get("unconfirmed_po_quantity"),
                         data.get("in_progress_quantity"),
                         data.get("committed_quantity"),
                         data.get("action", "skip"),
@@ -572,11 +578,13 @@ class PostgresManager:
                     "INSERT INTO product_logs (sync_run_id, store_id, product_upc, "
                     "product_description, shopify_variant_id, shopify_product_id, "
                     "old_quantity, new_quantity, quantity_on_hand, pending_po_quantity, "
-                    "in_progress_quantity, committed_quantity, action, error_message, created_at) "
+                    "unconfirmed_po_quantity, in_progress_quantity, committed_quantity, "
+                    "action, error_message, created_at) "
                     "VALUES (%(sync_run_id)s,%(store_id)s,%(product_upc)s,"
                     "%(product_description)s,%(shopify_variant_id)s,%(shopify_product_id)s,"
                     "%(old_quantity)s,%(new_quantity)s,%(quantity_on_hand)s,%(pending_po_quantity)s,"
-                    "%(in_progress_quantity)s,%(committed_quantity)s,%(action)s,%(error_message)s,%(created_at)s)",
+                    "%(unconfirmed_po_quantity)s,%(in_progress_quantity)s,%(committed_quantity)s,"
+                    "%(action)s,%(error_message)s,%(created_at)s)",
                     logs,
                 )
             conn.commit()
@@ -928,18 +936,35 @@ class MSSQLManager:
         return {row["ProductUPC"]: float(row["QuantOnHand"]) for row in rows}
 
     def get_pending_po_quantities(self):
+        """Pending PO quantity per UPC, split by supplier confirmation.
+
+        Returns (confirmed, unconfirmed): two {upc: qty} dicts sharing one key
+        set. Only `confirmed` is added to sellable stock -- an unconfirmed PO
+        is quantity the supplier has not committed to, so treating it as
+        available oversells. A line counts as confirmed when its PO header is
+        exactly 'confirmed'; NULL or any other header value is unconfirmed.
+        LEFT JOIN so detail rows whose header row is missing stay visible as
+        unconfirmed rather than vanishing from both buckets.
+        """
         conn = self.get_conn()
         cursor = conn.cursor(as_dict=True)
         cursor.execute(
-            "SELECT ProductUPC, SUM(ISNULL(QtyOrdered, 0) - ISNULL(QtyReceived, 0)) as PendingQty "
-            "FROM PurchaseOrdersDetails_tbl "
-            "WHERE Committedln = 0 AND ProductUPC IS NOT NULL AND ProductUPC != '' "
-            "GROUP BY ProductUPC"
+            "SELECT d.ProductUPC, "
+            "SUM(CASE WHEN h.PoHeader = 'confirmed' "
+            "THEN ISNULL(d.QtyOrdered, 0) - ISNULL(d.QtyReceived, 0) ELSE 0 END) as ConfirmedQty, "
+            "SUM(CASE WHEN h.PoHeader = 'confirmed' THEN 0 "
+            "ELSE ISNULL(d.QtyOrdered, 0) - ISNULL(d.QtyReceived, 0) END) as UnconfirmedQty "
+            "FROM PurchaseOrdersDetails_tbl d "
+            "LEFT JOIN PurchaseOrders_tbl h ON h.PoID = d.PoID "
+            "WHERE d.Committedln = 0 AND d.ProductUPC IS NOT NULL AND d.ProductUPC != '' "
+            "GROUP BY d.ProductUPC"
         )
         rows = cursor.fetchall()
         cursor.close()
         conn.close()
-        return {row["ProductUPC"]: float(row["PendingQty"]) for row in rows}
+        confirmed = {row["ProductUPC"]: float(row["ConfirmedQty"]) for row in rows}
+        unconfirmed = {row["ProductUPC"]: float(row["UnconfirmedQty"]) for row in rows}
+        return confirmed, unconfirmed
 
     def get_in_progress_quantities(self):
         conn = self.get_conn()

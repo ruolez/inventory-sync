@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-Shopify inventory sync application. Pulls inventory from two MS SQL Server databases (S2S for on-hand/PO quantities, DB_ADMIN for in-progress quantities), subtracts units committed to open orders aggregated across all stores, calculates final stock (`max(0, on_hand + pending_po - in_progress - committed)`), and pushes to Shopify via GraphQL Admin API. Also manages product publish/unpublish based on stock levels.
+Shopify inventory sync application. Pulls inventory from two MS SQL Server databases (S2S for on-hand/PO quantities, DB_ADMIN for in-progress quantities), subtracts units committed to open orders aggregated across all stores, calculates final stock (`max(0, on_hand + confirmed_po - in_progress - committed)`), and pushes to Shopify via GraphQL Admin API. Also manages product publish/unpublish based on stock levels.
 
 Stack: Python 3.11, Flask, PostgreSQL 16, Vanilla JS, Docker.
 
@@ -32,8 +32,8 @@ No test suite, linter, or CI pipeline exists.
 
 1. **Fetch Shopify** — `shopify_client.get_all_variants(location_id)` queries `location.inventoryLevels` via GraphQL cursor pagination. Returns `{barcode: variant_data}` dict.
 1B. **Aggregate committed across all stores** — Sums Shopify `committed` quantity per barcode across the current store *and every other configured store* (each at its active location), excluding units committed to archived/closed-but-unfulfilled orders. All stores draw from the same physical warehouse, so committed-but-unshipped units are reserved globally to prevent overselling.
-2. **Fetch SQL Server** — Three queries across two MSSQL databases: on-hand (Items_tbl), pending PO (PurchaseOrdersDetails_tbl), in-progress (QuotationsInProgress); plus discontinued barcodes.
-3. **Calculate** — `final = max(0, on_hand + pending_po - in_progress - committed)` for each barcode found in Shopify; discontinued barcodes force `final = 0`.
+2. **Fetch SQL Server** — Three queries across two MSSQL databases: on-hand (Items_tbl), pending PO (PurchaseOrdersDetails_tbl LEFT JOINed to PurchaseOrders_tbl), in-progress (QuotationsInProgress); plus discontinued barcodes. The PO query splits open lines into **confirmed** (header `PoHeader = 'confirmed'`) and **unconfirmed** (any other value, NULL, or missing header) buckets in one pass.
+3. **Calculate** — `final = max(0, on_hand + confirmed_po - in_progress - committed)` for each barcode found in Shopify; discontinued barcodes force `final = 0`. Only supplier-confirmed PO quantity counts toward sellable stock — unconfirmed quantity is never added (the supplier has not committed to it), but it is recorded in `product_logs.unconfirmed_po_quantity` and shown in the Logs page so a stock drop is always explainable.
 4. **Update Shopify** — Sets inventory quantities, publishes/unpublishes products based on stock, logs every action to PostgreSQL `product_logs`.
 
 ### Key Modules

@@ -171,8 +171,13 @@ def run_sync(store_id, pg):
         logger.info("S2S on-hand: %d UPCs (%.1fs)", len(on_hand), time.time() - phase_start)
 
         phase_start = time.time()
-        pending_po = s2s.get_pending_po_quantities()
-        logger.info("S2S pending PO: %d UPCs (%.1fs)", len(pending_po), time.time() - phase_start)
+        pending_po, unconfirmed_po = s2s.get_pending_po_quantities()
+        logger.info(
+            "S2S pending PO: %d UPCs (%.1fs); %d UPCs hold unconfirmed PO qty (withheld from stock)",
+            len(pending_po),
+            time.time() - phase_start,
+            sum(1 for q in unconfirmed_po.values() if q),
+        )
 
         phase_start = time.time()
         in_progress = db_admin.get_in_progress_quantities()
@@ -195,6 +200,7 @@ def run_sync(store_id, pg):
         for upc in shopify_barcodes:
             oh = on_hand.get(upc, 0)
             po = pending_po.get(upc, 0)
+            unconfirmed = unconfirmed_po.get(upc, 0)
             ip = in_progress.get(upc, 0)
             committed = committed_by_upc.get(upc, 0)
             is_discontinued = upc in discontinued
@@ -203,6 +209,7 @@ def run_sync(store_id, pg):
                 "final": final,
                 "on_hand": oh,
                 "pending_po": po,
+                "unconfirmed_po": unconfirmed,
                 "in_progress": ip,
                 "committed": committed,
                 "discontinued": is_discontinued,
@@ -232,6 +239,7 @@ def run_sync(store_id, pg):
                 "new_quantity": new_qty,
                 "quantity_on_hand": inv_data["on_hand"],
                 "pending_po_quantity": inv_data["pending_po"],
+                "unconfirmed_po_quantity": inv_data["unconfirmed_po"],
                 "in_progress_quantity": inv_data["in_progress"],
                 "committed_quantity": inv_data["committed"],
                 "action": "skip",
@@ -397,6 +405,7 @@ def run_sync(store_id, pg):
                 "new_quantity": variant["inventory_quantity"],
                 "quantity_on_hand": None,
                 "pending_po_quantity": None,
+                "unconfirmed_po_quantity": None,
                 "in_progress_quantity": None,
                 "committed_quantity": None,
                 "action": "excluded",
