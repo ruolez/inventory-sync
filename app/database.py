@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS stores (
     admin_access_token VARCHAR(255) NOT NULL,
     publication_id VARCHAR(255),
     sync_enabled BOOLEAN DEFAULT FALSE,
-    sync_interval_hours INTEGER DEFAULT 6,
+    sync_interval_minutes INTEGER DEFAULT 360,
     last_sync_at TIMESTAMPTZ,
     next_sync_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -146,6 +146,27 @@ class PostgresManager:
                 cur.execute(
                     "ALTER TABLE product_logs ADD COLUMN IF NOT EXISTS committed_quantity INTEGER"
                 )
+                # Sync interval moved from hours to minutes. RENAME COLUMN has no
+                # IF EXISTS form, so the information_schema guard makes this a
+                # one-shot: once renamed, the branch is never taken again and the
+                # x60 backfill cannot run twice.
+                cur.execute(
+                    """
+                    DO $$
+                    BEGIN
+                      IF EXISTS (SELECT 1 FROM information_schema.columns
+                                 WHERE table_name = 'stores'
+                                   AND column_name = 'sync_interval_hours') THEN
+                        ALTER TABLE stores
+                          RENAME COLUMN sync_interval_hours TO sync_interval_minutes;
+                        UPDATE stores
+                          SET sync_interval_minutes = COALESCE(sync_interval_minutes, 6) * 60;
+                        ALTER TABLE stores
+                          ALTER COLUMN sync_interval_minutes SET DEFAULT 360;
+                      END IF;
+                    END $$;
+                    """
+                )
             conn.commit()
         logger.info("PostgreSQL tables initialized")
         # Build logs-performance indexes off the startup path. CREATE INDEX
@@ -230,7 +251,7 @@ class PostgresManager:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute(
                     "SELECT id, store_name, store_url, publication_id, "
-                    "auth_method, sync_enabled, sync_interval_hours, last_sync_at, "
+                    "auth_method, sync_enabled, sync_interval_minutes, last_sync_at, "
                     "next_sync_at, created_at, updated_at FROM stores ORDER BY id"
                 )
                 return [dict(r) for r in cur.fetchall()]
@@ -248,7 +269,7 @@ class PostgresManager:
                 cur.execute(
                     "INSERT INTO stores (store_name, store_url, admin_access_token, "
                     "auth_method, oauth_client_id, oauth_client_secret, "
-                    "sync_interval_hours) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING *",
+                    "sync_interval_minutes) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING *",
                     (
                         data["store_name"],
                         data["store_url"],
@@ -256,7 +277,7 @@ class PostgresManager:
                         data.get("auth_method", "legacy"),
                         data.get("oauth_client_id"),
                         data.get("oauth_client_secret"),
-                        data.get("sync_interval_hours", 6),
+                        data.get("sync_interval_minutes", 360),
                     ),
                 )
                 row = cur.fetchone()
@@ -275,7 +296,7 @@ class PostgresManager:
             "oauth_client_secret",
             "publication_id",
             "sync_enabled",
-            "sync_interval_hours",
+            "sync_interval_minutes",
             "last_sync_at",
             "next_sync_at",
         ]:

@@ -17,6 +17,12 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 pg = PostgresManager()
 
+# A full sync fetches every Shopify variant across all stores plus three MSSQL
+# queries, so anything under five minutes risks runs stacking up.
+MIN_SYNC_INTERVAL_MINUTES = 5
+MAX_SYNC_INTERVAL_MINUTES = 10080  # 7 days
+DEFAULT_SYNC_INTERVAL_MINUTES = 360
+
 
 @app.after_request
 def add_no_cache(response):
@@ -104,6 +110,24 @@ def health():
 # --- Store API ---
 
 
+def normalize_interval_minutes(data):
+    """Coerces sync_interval_minutes to an int in place. Returns an error string,
+    or None when the key is absent or already holds a valid interval."""
+    if "sync_interval_minutes" not in data:
+        return None
+    try:
+        minutes = int(data["sync_interval_minutes"])
+    except (TypeError, ValueError):
+        return "sync_interval_minutes must be a whole number of minutes"
+    if not MIN_SYNC_INTERVAL_MINUTES <= minutes <= MAX_SYNC_INTERVAL_MINUTES:
+        return (
+            f"sync_interval_minutes must be between {MIN_SYNC_INTERVAL_MINUTES} "
+            f"and {MAX_SYNC_INTERVAL_MINUTES} minutes"
+        )
+    data["sync_interval_minutes"] = minutes
+    return None
+
+
 @app.route("/api/stores", methods=["GET"])
 def get_stores():
     stores = pg.get_stores()
@@ -126,6 +150,9 @@ def create_store():
     else:
         if not data.get("admin_access_token"):
             return jsonify({"error": "admin_access_token is required"}), 400
+    interval_error = normalize_interval_minutes(data)
+    if interval_error:
+        return jsonify({"error": interval_error}), 400
     store = pg.create_store(data)
     return to_json(store, 201)
 
@@ -135,9 +162,16 @@ def update_store(store_id):
     data = request.get_json()
     if not data:
         return jsonify({"error": "No data provided"}), 400
+    interval_error = normalize_interval_minutes(data)
+    if interval_error:
+        return jsonify({"error": interval_error}), 400
     store = pg.update_store(store_id, data)
     if not store:
         return jsonify({"error": "Store not found"}), 404
+    if "sync_interval_minutes" in data:
+        # Applies to an already-running scheduler; a no-op when it is stopped,
+        # since the next start reads the interval from the store row.
+        scheduler.update_interval(store_id, data["sync_interval_minutes"])
     return to_json(store)
 
 
@@ -344,7 +378,7 @@ def start_scheduler(store_id):
     store = pg.get_store(store_id)
     if not store:
         return jsonify({"error": "Store not found"}), 404
-    interval = store.get("sync_interval_hours", 6)
+    interval = store.get("sync_interval_minutes") or DEFAULT_SYNC_INTERVAL_MINUTES
     if scheduler.start_scheduler(store_id, interval, pg):
         return jsonify({"success": True, "message": "Scheduler started"})
     return jsonify({"error": "Scheduler already running"}), 409
@@ -483,7 +517,7 @@ if __name__ == "__main__":
     pg.init_tables()
     for store in pg.get_stores():
         if store.get("sync_enabled"):
-            interval = store.get("sync_interval_hours", 6)
+            interval = store.get("sync_interval_minutes") or DEFAULT_SYNC_INTERVAL_MINUTES
             scheduler.start_scheduler(store["id"], interval, pg)
             logger.info("Restored scheduler for store %s (%s)", store["id"], store["store_name"])
     scheduler.start_log_purge_scheduler(pg)

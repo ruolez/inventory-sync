@@ -279,7 +279,16 @@ verify_schema_migrations() {
         return 1
     fi
 
-    print_success "Schema migrations applied (product_logs.committed_quantity present)"
+    # The sync interval was renamed from hours to minutes; a store row left on
+    # the old column means the rename migration did not run.
+    if ! docker compose exec -T db psql -U inventory -d inventory_sync -tAc \
+        "SELECT 1 FROM information_schema.columns WHERE table_name='stores' AND column_name='sync_interval_minutes'" 2>/dev/null | grep -q "1"; then
+        print_error "Missing column stores.sync_interval_minutes"
+        print_info "Check: docker compose logs web | grep -i 'tables initialized'"
+        return 1
+    fi
+
+    print_success "Schema migrations applied (product_logs.committed_quantity, stores.sync_interval_minutes present)"
 }
 
 ################################################################################

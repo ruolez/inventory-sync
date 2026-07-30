@@ -42,12 +42,12 @@ No test suite, linter, or CI pipeline exists.
 - **`database.py`** — `PostgresManager` (app state in PostgreSQL) + `MSSQLManager` (read-only queries against external SQL Server)
 - **`sync_engine.py`** — `run_sync(store_id, pg)` orchestrates the 4-phase sync
 - **`shopify_client.py`** — Shopify GraphQL client (Admin API `2026-04`, pinned in `API_VERSION`). Rate-limit tracking (sleeps when <100 points available) plus retry-with-backoff in `_request()` for all reads and writes: network/timeout, 429/5xx, GraphQL `THROTTLED`, and OAuth 401 re-auth. Inventory writes use `inventorySetQuantities` with a mandatory `@idempotent` key (so retries never double-apply) and opt out of compare-and-swap via `changeFromQuantity: null`.
-- **`scheduler.py`** — Per-store background scheduler using daemon threads with `threading.Event` for interruptible sleep
+- **`scheduler.py`** — Per-store background scheduler using daemon threads with `threading.Event` for interruptible sleep. Interval is in minutes (min 5, enforced in `main.py`); the wait between runs polls every 15s so `update_interval()` applies to a running scheduler without triggering an out-of-band sync
 
 ### Data Storage
 
 PostgreSQL holds all app state (schema auto-created via `SCHEMA_SQL` in `database.py`):
-- `stores` — Shopify store credentials and sync config
+- `stores` — Shopify store credentials and sync config (`sync_interval_minutes`, default 360)
 - `store_locations` — Which Shopify location to sync (one active per store)
 - `sql_config` — MSSQL connection details (keys: `s2s`, `db_admin`)
 - `sync_runs` — Execution log per sync (status: running/success/partial/failed)

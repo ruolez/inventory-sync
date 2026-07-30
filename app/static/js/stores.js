@@ -1,6 +1,14 @@
 let currentLocationsStoreId = null;
 let fetchedLocations = [];
 
+function formatInterval(minutes) {
+    const total = parseInt(minutes) || 0;
+    if (total < 60) return `${total}m`;
+    const hours = Math.floor(total / 60);
+    const rest = total % 60;
+    return rest ? `${hours}h ${rest}m` : `${hours}h`;
+}
+
 async function loadStores() {
     try {
         const res = await fetch('/api/stores');
@@ -32,14 +40,14 @@ function renderStores(stores) {
                 <span class="badge ${store.publication_id ? 'badge-info' : 'badge-warning'}">
                     ${store.publication_id ? 'Publication Set' : 'No Publication'}
                 </span>
-                <span class="badge badge-neutral">Every ${store.sync_interval_hours}h</span>
+                <span class="badge badge-neutral">Every ${formatInterval(store.sync_interval_minutes)}</span>
             </div>
             <div class="store-detail">Last sync: ${store.last_sync_at ? formatDate(store.last_sync_at) : 'Never'}</div>
             <div class="store-actions">
                 <button class="btn btn-outline btn-sm" onclick="testConnection(${store.id})">Test</button>
                 <button class="btn btn-outline btn-sm" onclick="openLocations(${store.id})">Locations</button>
                 <button class="btn btn-outline btn-sm" onclick="fetchPublication(${store.id})">Publication</button>
-                <button class="btn btn-outline btn-sm" onclick="openEditModal(${store.id}, '${escapeAttr(store.store_name)}', '${escapeAttr(store.store_url)}', ${store.sync_interval_hours}, '${store.auth_method || 'legacy'}')">Edit</button>
+                <button class="btn btn-outline btn-sm" onclick="openEditModal(${store.id}, '${escapeAttr(store.store_name)}', '${escapeAttr(store.store_url)}', ${store.sync_interval_minutes}, '${store.auth_method || 'legacy'}')">Edit</button>
                 <button class="btn btn-danger btn-sm" onclick="deleteStore(${store.id}, '${escapeAttr(store.store_name)}')">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3,6 5,6 21,6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
                 </button>
@@ -57,12 +65,12 @@ function openAddModal() {
     document.getElementById('oauth-client-id').value = '';
     document.getElementById('oauth-client-secret').value = '';
     document.getElementById('auth-method').value = 'legacy';
-    document.getElementById('sync-interval').value = '6';
+    document.getElementById('sync-interval').value = '360';
     toggleAuthFields();
     document.getElementById('store-modal').classList.add('active');
 }
 
-function openEditModal(id, name, url, interval, authMethod) {
+function openEditModal(id, name, url, intervalMinutes, authMethod) {
     document.getElementById('modal-title').textContent = 'Edit Store';
     document.getElementById('store-id').value = id;
     document.getElementById('store-name').value = name;
@@ -71,7 +79,7 @@ function openEditModal(id, name, url, interval, authMethod) {
     document.getElementById('oauth-client-id').value = '';
     document.getElementById('oauth-client-secret').value = '';
     document.getElementById('auth-method').value = authMethod || 'legacy';
-    document.getElementById('sync-interval').value = interval;
+    document.getElementById('sync-interval').value = intervalMinutes;
     toggleAuthFields();
     document.getElementById('store-modal').classList.add('active');
 }
@@ -92,7 +100,7 @@ async function saveStore() {
     const data = {
         store_name: document.getElementById('store-name').value.trim(),
         store_url: document.getElementById('store-url').value.trim(),
-        sync_interval_hours: parseInt(document.getElementById('sync-interval').value),
+        sync_interval_minutes: parseInt(document.getElementById('sync-interval').value),
         auth_method: authMethod,
     };
 
