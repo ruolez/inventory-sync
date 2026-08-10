@@ -47,7 +47,19 @@ class TokenManager:
             },
             timeout=15,
         )
-        resp.raise_for_status()
+        if not resp.ok:
+            # Shopify returns the real cause (invalid_client, unsupported_grant_type,
+            # ...) in the body; raise_for_status() alone would discard it.
+            try:
+                body = resp.json()
+                detail = body.get("error_description") or body.get("error") or resp.text
+            except ValueError:
+                detail = resp.text[:300]
+            raise Exception(
+                f"OAuth token exchange failed for {clean_url} "
+                f"(HTTP {resp.status_code}): {detail}"
+            )
+
         data = resp.json()
         logger.info(
             "Token acquired for store %s (expires in %ds)",
