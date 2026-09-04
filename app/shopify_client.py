@@ -224,6 +224,7 @@ class ShopifyClient:
                         node {
                           id
                           barcode
+                          sku
                           product {
                             id
                             title
@@ -260,6 +261,7 @@ class ShopifyClient:
                         node {
                           id
                           barcode
+                          sku
                           product {
                             id
                             title
@@ -316,6 +318,7 @@ class ShopifyClient:
                     committed = qty_by_name.get("committed", 0)
                     result_entry = {
                         "variant_id": variant["id"],
+                        "sku": variant.get("sku"),
                         "inventory_quantity": available,
                         "committed_quantity": committed,
                         "inventory_item_id": item["id"],

@@ -97,6 +97,96 @@ async function deleteExclusion(id, upc) {
     }
 }
 
+async function loadSkuPrefixes() {
+    try {
+        const res = await fetch('/api/excluded-sku-prefixes');
+        const prefixes = await res.json();
+        renderSkuPrefixes(prefixes);
+    } catch (err) {
+        showToast('Failed to load excluded SKU prefixes: ' + err.message, 'error');
+    }
+}
+
+function renderSkuPrefixes(prefixes) {
+    const tbody = document.getElementById('sku-prefix-body');
+    const badge = document.getElementById('sku-count-badge');
+    badge.textContent = prefixes.length;
+
+    if (!prefixes.length) {
+        tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No excluded SKU prefixes</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = prefixes.map(p => `
+        <tr>
+            <td class="mono">${escapeHtml(p.sku_prefix)}</td>
+            <td>${escapeHtml(p.reason || '-')}</td>
+            <td style="font-size: 12px;">${formatDate(p.created_at)}</td>
+            <td>
+                <button class="btn btn-ghost btn-icon" onclick="deleteSkuPrefix(${p.id}, '${escapeAttr(p.sku_prefix)}')" title="Remove">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3,6 5,6 21,6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+                </button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+async function addSkuPrefix() {
+    const prefixInput = document.getElementById('sku-prefix-input');
+    const reasonInput = document.getElementById('sku-reason-input');
+    const skuPrefix = prefixInput.value.trim();
+    if (!skuPrefix) {
+        showToast('Enter a SKU prefix', 'error');
+        return;
+    }
+
+    try {
+        const res = await fetch('/api/excluded-sku-prefixes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                sku_prefix: skuPrefix,
+                reason: reasonInput.value.trim() || null,
+            }),
+        });
+
+        if (res.status === 409) {
+            showToast('This SKU prefix is already excluded', 'error');
+            return;
+        }
+
+        if (!res.ok) {
+            const data = await res.json();
+            showToast(data.error || 'Failed to add SKU prefix', 'error');
+            return;
+        }
+
+        showToast('SKU prefix excluded from sync', 'success');
+        prefixInput.value = '';
+        reasonInput.value = '';
+        loadSkuPrefixes();
+    } catch (err) {
+        showToast('Error: ' + err.message, 'error');
+    }
+}
+
+async function deleteSkuPrefix(id, skuPrefix) {
+    const confirmed = await confirmDialog(`Remove SKU prefix "${skuPrefix}" from exclusions? Matching products will be synced again on the next run.`, 'Remove Exclusion');
+    if (!confirmed) return;
+    try {
+        const res = await fetch(`/api/excluded-sku-prefixes/${id}`, { method: 'DELETE' });
+        if (res.ok) {
+            showToast('Exclusion removed', 'success');
+            loadSkuPrefixes();
+        } else {
+            const data = await res.json();
+            showToast(data.error || 'Failed to remove', 'error');
+        }
+    } catch (err) {
+        showToast('Error: ' + err.message, 'error');
+    }
+}
+
 function searchProducts() {
     const query = document.getElementById('search-input').value.trim();
     const dropdown = document.getElementById('autocomplete-dropdown');
@@ -149,4 +239,9 @@ document.getElementById('search-input').addEventListener('focus', function() {
     document.getElementById('selected-description').value = '';
 });
 
+document.getElementById('sku-prefix-input').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') addSkuPrefix();
+});
+
 loadExcludedProducts();
+loadSkuPrefixes();

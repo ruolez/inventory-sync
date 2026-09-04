@@ -102,6 +102,15 @@ CREATE TABLE IF NOT EXISTS excluded_products (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_excluded_products_upc ON excluded_products(product_upc);
+
+CREATE TABLE IF NOT EXISTS excluded_sku_prefixes (
+    id SERIAL PRIMARY KEY,
+    sku_prefix VARCHAR(100) NOT NULL,
+    reason VARCHAR(255),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_excluded_sku_prefixes_lower
+    ON excluded_sku_prefixes (LOWER(sku_prefix));
 """
 
 
@@ -721,6 +730,40 @@ class PostgresManager:
             with conn.cursor() as cur:
                 cur.execute("SELECT product_upc FROM excluded_products")
                 return {row[0] for row in cur.fetchall()}
+
+    # --- Excluded SKU Prefixes ---
+
+    def get_excluded_sku_prefixes(self):
+        with self.get_conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("SELECT * FROM excluded_sku_prefixes ORDER BY created_at DESC")
+                return [dict(r) for r in cur.fetchall()]
+
+    def add_excluded_sku_prefix(self, sku_prefix, reason=None):
+        with self.get_conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    "INSERT INTO excluded_sku_prefixes (sku_prefix, reason) "
+                    "VALUES (%s, %s) ON CONFLICT (LOWER(sku_prefix)) DO NOTHING RETURNING *",
+                    (sku_prefix, reason),
+                )
+                row = cur.fetchone()
+            conn.commit()
+            return dict(row) if row else None
+
+    def delete_excluded_sku_prefix(self, prefix_id):
+        with self.get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM excluded_sku_prefixes WHERE id = %s", (prefix_id,))
+                deleted = cur.rowcount
+            conn.commit()
+            return deleted > 0
+
+    def get_excluded_sku_prefixes_list(self):
+        with self.get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT sku_prefix FROM excluded_sku_prefixes")
+                return [row[0] for row in cur.fetchall()]
 
     # --- Analytics ---
 

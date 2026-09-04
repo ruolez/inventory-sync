@@ -323,6 +323,32 @@ def delete_excluded_product(product_id):
     return jsonify({"error": "Not found"}), 404
 
 
+@app.route("/api/excluded-sku-prefixes", methods=["GET"])
+def get_excluded_sku_prefixes():
+    return to_json(pg.get_excluded_sku_prefixes())
+
+
+@app.route("/api/excluded-sku-prefixes", methods=["POST"])
+def add_excluded_sku_prefix():
+    data = request.get_json() or {}
+    sku_prefix = (data.get("sku_prefix") or "").strip()
+    if not sku_prefix:
+        return jsonify({"error": "sku_prefix is required"}), 400
+    if len(sku_prefix) > 100:
+        return jsonify({"error": "sku_prefix must be 100 characters or fewer"}), 400
+    result = pg.add_excluded_sku_prefix(sku_prefix, data.get("reason"))
+    if not result:
+        return jsonify({"error": "SKU prefix already excluded"}), 409
+    return to_json(result, 201)
+
+
+@app.route("/api/excluded-sku-prefixes/<int:prefix_id>", methods=["DELETE"])
+def delete_excluded_sku_prefix(prefix_id):
+    if pg.delete_excluded_sku_prefix(prefix_id):
+        return jsonify({"success": True})
+    return jsonify({"error": "Not found"}), 404
+
+
 @app.route("/api/excluded-products/search", methods=["GET"])
 def search_products_for_exclusion():
     q = request.args.get("q", "").strip()

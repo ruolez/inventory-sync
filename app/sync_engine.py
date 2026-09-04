@@ -8,6 +8,17 @@ from app.shopify_client import create_shopify_client
 logger = logging.getLogger(__name__)
 
 
+def find_barcodes_with_sku_prefix(variants, sku_prefixes):
+    prefixes = tuple(p.strip().lower() for p in sku_prefixes if p and p.strip())
+    if not prefixes:
+        return set()
+    return {
+        barcode
+        for barcode, variant in variants.items()
+        if (variant.get("sku") or "").strip().lower().startswith(prefixes)
+    }
+
+
 def run_sync(store_id, pg):
     store = pg.get_store(store_id)
     if not store:
@@ -47,6 +58,7 @@ def run_sync(store_id, pg):
     }
     product_logs = []
     excluded_upcs = pg.get_excluded_upcs_set()
+    excluded_sku_prefixes = pg.get_excluded_sku_prefixes_list()
     excluded_found = set()
 
     try:
@@ -190,11 +202,16 @@ def run_sync(store_id, pg):
         logger.info("=== Phase 3: Calculating inventory ===")
         shopify_barcodes = set(variants.keys())
 
-        excluded_found = shopify_barcodes & excluded_upcs
+        excluded_by_upc = shopify_barcodes & excluded_upcs
+        excluded_by_sku = find_barcodes_with_sku_prefix(variants, excluded_sku_prefixes)
+        excluded_found = excluded_by_upc | excluded_by_sku
         if excluded_found:
             shopify_barcodes -= excluded_found
             counters["products_excluded"] = len(excluded_found)
-            logger.info("Excluded %d products from sync", len(excluded_found))
+            logger.info(
+                "Excluded %d products from sync (%d by UPC, %d by SKU prefix)",
+                len(excluded_found), len(excluded_by_upc), len(excluded_by_sku),
+            )
 
         inventory = {}
         for upc in shopify_barcodes:

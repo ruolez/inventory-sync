@@ -33,7 +33,7 @@ No test suite, linter, or CI pipeline exists.
 1. **Fetch Shopify** — `shopify_client.get_all_variants(location_id)` queries `location.inventoryLevels` via GraphQL cursor pagination. Returns `{barcode: variant_data}` dict.
 1B. **Aggregate committed across all stores** — Sums Shopify `committed` quantity per barcode across the current store *and every other configured store* (each at its active location), excluding units committed to archived/closed-but-unfulfilled orders. All stores draw from the same physical warehouse, so committed-but-unshipped units are reserved globally to prevent overselling.
 2. **Fetch SQL Server** — Three queries across two MSSQL databases: on-hand (Items_tbl), pending PO (PurchaseOrdersDetails_tbl LEFT JOINed to PurchaseOrders_tbl), in-progress (QuotationsInProgress); plus discontinued barcodes. The PO query splits open lines into **confirmed** (header `PoHeader = 'confirmed'`) and **unconfirmed** (any other value, NULL, or missing header) buckets in one pass.
-3. **Calculate** — `final = max(0, on_hand + confirmed_po - in_progress - committed)` for each barcode found in Shopify; discontinued barcodes force `final = 0`. Only supplier-confirmed PO quantity counts toward sellable stock — unconfirmed quantity is never added (the supplier has not committed to it), but it is recorded in `product_logs.unconfirmed_po_quantity` and shown in the Logs page so a stock drop is always explainable.
+3. **Calculate** — `final = max(0, on_hand + confirmed_po - in_progress - committed)` for each barcode found in Shopify; discontinued barcodes force `final = 0`. Before calculating, products are excluded (never touched in Shopify, logged as `excluded`) if their barcode is in `excluded_products` **or** their Shopify variant SKU starts with any entry in `excluded_sku_prefixes` (case-insensitive, matched by `find_barcodes_with_sku_prefix`). Both lists are managed on the Excluded Products page. Only supplier-confirmed PO quantity counts toward sellable stock — unconfirmed quantity is never added (the supplier has not committed to it), but it is recorded in `product_logs.unconfirmed_po_quantity` and shown in the Logs page so a stock drop is always explainable.
 4. **Update Shopify** — Sets inventory quantities, publishes/unpublishes products based on stock, logs every action to PostgreSQL `product_logs`.
 
 ### Key Modules
@@ -52,6 +52,8 @@ PostgreSQL holds all app state (schema auto-created via `SCHEMA_SQL` in `databas
 - `sql_config` — MSSQL connection details (keys: `s2s`, `db_admin`)
 - `sync_runs` — Execution log per sync (status: running/success/partial/failed)
 - `product_logs` — Per-product action log (skip/inventory_update/publish/unpublish/error)
+- `excluded_products` — Barcodes excluded from sync
+- `excluded_sku_prefixes` — SKU prefixes excluded from sync (unique on lowercased prefix)
 
 ### Stuck Sync Protection
 

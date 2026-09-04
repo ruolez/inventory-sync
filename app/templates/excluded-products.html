@@ -78,13 +78,13 @@
             <div class="container">
                 <div class="page-header">
                     <h1>Excluded Products</h1>
-                    <p>Products excluded from inventory sync — Shopify quantities remain untouched</p>
+                    <p>Products excluded from inventory sync by UPC or SKU prefix — Shopify quantities remain untouched</p>
                 </div>
 
                 <!-- Add Exclusion Card -->
                 <div class="card">
                     <div class="card-header">
-                        <h2>Add Exclusion</h2>
+                        <h2>Add Exclusion by UPC</h2>
                     </div>
                     <div class="exclusion-form">
                         <div class="form-row" style="grid-template-columns: 1fr 1fr auto;">
@@ -134,6 +134,58 @@
                             </thead>
                             <tbody id="excluded-body">
                                 <tr><td colspan="5" class="loading-text"><span class="spinner"></span></td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Add SKU Prefix Exclusion Card -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Add Exclusion by SKU Prefix</h2>
+                    </div>
+                    <div class="exclusion-form">
+                        <div class="form-row" style="grid-template-columns: 1fr 1fr auto;">
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label for="sku-prefix-input">SKU prefix (case-insensitive)</label>
+                                <input type="text" class="form-control" id="sku-prefix-input" placeholder="e.g. DROP-" maxlength="100" autocomplete="off">
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label for="sku-reason-input">Reason (optional)</label>
+                                <input type="text" class="form-control" id="sku-reason-input" placeholder="e.g. Dropship items">
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0; display: flex; align-items: flex-end;">
+                                <button class="btn btn-primary" onclick="addSkuPrefix()">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                                    Add
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Excluded SKU Prefixes Table -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Excluded SKU Prefixes <span class="badge badge-neutral" id="sku-count-badge" style="margin-left: 8px;"></span></h2>
+                        <button class="btn btn-outline" onclick="loadSkuPrefixes()">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23,4 23,10 17,10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+                            Refresh
+                        </button>
+                    </div>
+
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>SKU Prefix</th>
+                                    <th>Reason</th>
+                                    <th>Date Added</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="sku-prefix-body">
+                                <tr><td colspan="4" class="loading-text"><span class="spinner"></span></td></tr>
                             </tbody>
                         </table>
                     </div>
